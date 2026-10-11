@@ -93,7 +93,27 @@
       "threshold": 300.0
     }
   ],
-  "functions": [],
+  "functions": [
+    {
+      "cyclomatic_complexity": 0,
+      "end_line": 20,
+      "file_path": "a.py",
+      "nesting_depth": 0,
+      "nloc": 0,
+      "parameter_count": 0,
+      "provenance": {
+        "commit": "abc123",
+        "config_hash": "cfg456",
+        "is_estimated": false,
+        "parse_complete": true,
+        "scanned_at": "",
+        "source_tool": "scc",
+        "tool_version": "3.2.0"
+      },
+      "qualified_name": "sample",
+      "start_line": 12
+    }
+  ],
   "repository": "example-repository",
   "risks": [
     {

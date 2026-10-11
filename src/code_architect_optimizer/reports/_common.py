@@ -18,10 +18,10 @@ _SECRET_KEY = re.compile(
     r"(?i)(token|password|secret|api[_-]?key|apikey|authorization)"
 )
 _SECRET_ASSIGNMENT = re.compile(
-    r"(?i)\b(token|password|secret|api[_-]?key|apikey|authorization)"
-    r"\s*[:=]\s*([^\s,;]+)"
+    r"(?i)(?<!\w)([\"']?)([\w-]*(?:token|password|passwd|secret|api[_-]?key|apikey|authorization)[\w-]*)"
+    r"([\"']?)\s*([:=])\s*(?:\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s,;]+)"
 )
-_BEARER = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
+_AUTH_CREDENTIAL = re.compile(r"(?i)\b(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+")
 _URL_CREDENTIALS = re.compile(r"(?i)(://[^/:\s]+:)[^@/\s]+@")
 _RAW_OUTPUT_KEYS = {
     "stderr",
@@ -56,15 +56,18 @@ def validate_report(report: ReportDocument | Mapping[str, Any]) -> ReportDocumen
     """Validate a renderer input without relying on CLI implementation details."""
 
     if isinstance(report, ReportDocument):
-        return report
+        report = report.model_dump(mode="json")
     return ReportDocument.model_validate(report)
 
 
 def _redact_string(value: str) -> str:
-    for secret in _secret_env_values():
+    for secret in sorted(_secret_env_values(), key=lambda item: (-len(item), item)):
         value = value.replace(secret, _REDACTED)
-    value = _BEARER.sub("Bearer " + _REDACTED, value)
-    value = _SECRET_ASSIGNMENT.sub(lambda match: f"{match.group(1)}={_REDACTED}", value)
+    value = _AUTH_CREDENTIAL.sub("Authorization " + _REDACTED, value)
+    value = _SECRET_ASSIGNMENT.sub(
+        lambda match: f"{match.group(1)}{match.group(2)}{match.group(3)}{match.group(4)}{_REDACTED}",
+        value,
+    )
     value = _URL_CREDENTIALS.sub(r"\1" + _REDACTED + "@", value)
     return value
 
@@ -103,7 +106,7 @@ def _number(value: Any) -> float:
 
 
 def _stable_key(value: Any) -> str:
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, allow_nan=False)
 
 
 def stable_data(report: ReportDocument | Mapping[str, Any]) -> dict[str, Any]:
@@ -174,6 +177,7 @@ def stable_data(report: ReportDocument | Mapping[str, Any]) -> dict[str, Any]:
             _stable_key(item),
         ),
     )
+    ReportDocument.model_validate(data)
     return data
 
 

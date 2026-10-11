@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from code_architect_optimizer.domain.models import Evidence, FileMetric, Finding, Provenance, RiskScore
+from code_architect_optimizer.domain.models import Evidence, FileMetric, Finding, FunctionMetric, Provenance, RiskScore
 from code_architect_optimizer.domain.schemas import ReportDocument
 from code_architect_optimizer.reports import (
     read_json_report,
@@ -32,6 +32,9 @@ def make_report() -> ReportDocument:
         files=[
             FileMetric(path="z.py", nloc=10, provenance=provenance),
             FileMetric(path="a.py", nloc=600, provenance=provenance),
+        ],
+        functions=[
+            FunctionMetric(file_path="a.py", qualified_name="sample", start_line=12, end_line=20, provenance=provenance)
         ],
         findings=[
             Finding(rule_id="file.nloc.review", severity="medium", path="a.py", actual=600, threshold=300),
@@ -68,6 +71,21 @@ def test_json_contract_is_valid_and_matches_snapshot() -> None:
     assert parsed.risks[0].path == "a.py"
     assert parsed.files[0].provenance.scanned_at == ""
     assert json.loads(rendered) == json.loads(SNAPSHOT.read_text(encoding="utf-8"))
+
+
+def test_rendering_is_invariant_to_input_order_and_timestamps() -> None:
+    first = make_report()
+    second = make_report()
+    first.scanned_at = "2026-10-11T00:00:00Z"
+    second.scanned_at = "2026-10-12T00:00:00Z"
+    second.files.reverse()
+    second.functions.reverse()
+    second.findings.reverse()
+    second.risks.reverse()
+    second.evidence.reverse()
+    second.files[0].provenance.scanned_at = "later"
+    assert render_json(first) == render_json(second)
+    assert render_markdown(first) == render_markdown(second)
 
 
 def test_markdown_orders_high_priority_items_first() -> None:

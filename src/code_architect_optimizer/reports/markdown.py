@@ -132,7 +132,31 @@ def render_markdown(report: ReportDocument | dict[str, Any]) -> str:
                 item.get("excerpt", ""),
             ]))
     else:
-        lines.append("No additional evidence reported; metric provenance is embedded above.\n")
+        lines.append("No additional evidence reported.\n")
+
+    lines.extend(["\n## Provenance\n\n"])
+    observations = [
+        ("file", item["path"], item["provenance"]) for item in files
+    ] + [
+        ("function", f"{item['file_path']}:{item['start_line']} {item['qualified_name']}", item["provenance"])
+        for item in functions
+    ] + [
+        ("evidence", item["path"], item["provenance"])
+        for item in evidence if item.get("provenance") is not None
+    ]
+    if observations:
+        lines.extend([
+            "| Kind | Location | Source | Version | Commit | Config hash | Estimated | Parse complete |\n",
+            "| --- | --- | --- | --- | --- | --- | --- | --- |\n",
+        ])
+        for kind, location, provenance in observations:
+            lines.append(_row([
+                kind, location, provenance["source_tool"], provenance["tool_version"],
+                provenance["commit"], provenance["config_hash"],
+                provenance["is_estimated"], provenance["parse_complete"],
+            ]))
+    else:
+        lines.append("No metric provenance reported.\n")
 
     return "".join(lines)
 
