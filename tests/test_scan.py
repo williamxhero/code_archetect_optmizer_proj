@@ -5,10 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from code_architect_optimizer.analyzers.base import MetricObservation, RawAnalyzerResult
+from code_architect_optimizer.analyzers.base import MetricObservation, RawAnalyzerResult, run_analyzer
+from code_architect_optimizer.classification.file_classifier import detect_language
+from code_architect_optimizer.domain.models import ScanContext
 from code_architect_optimizer.domain.schemas import ReportDocument
-from code_architect_optimizer.reports import render_json
+from code_architect_optimizer.reports import render_json, read_json_report
 from code_architect_optimizer.scan import scan_repository
+from tests.fixtures import materialize_project_fixture
 
 
 class FakeAnalyzer:
@@ -152,3 +155,176 @@ def test_changed_only_falls_back_to_full_scan_without_a_usable_git_base(tmp_path
     )
 
     assert [metric.path for metric in report.files] == ["src/one.py", "src/two.py"]
+
+
+def test_missing_phase_one_capabilities_are_reported_without_stopping_scan(tmp_path: Path) -> None:
+    names = ["scc", "lizard", "jscpd", "git-history"]
+    analyzers = [FakeAnalyzer(name, available=False) for name in names]
+
+    report = scan_repository(
+        tmp_path,
+        config={"project": {"name": "missing-tools"}},
+        analyzers=analyzers,
+        runner=fake_runner,
+        write_reports=False,
+    )
+
+    assert report.files == []
+    assert report.unavailable_tools == sorted(names)
+    statuses = {
+        item.source_tool: item
+        for item in report.evidence
+        if item.kind == "analyzer-status"
+    }
+    assert set(statuses) == set(names)
+    assert all(item.raw_value == "unavailable" for item in statuses.values())
+    assert all(item.provenance is not None and not item.provenance.parse_complete for item in statuses.values())
+
+
+def test_failure_states_keep_bounded_status_evidence_and_redact_process_data(tmp_path: Path) -> None:
+    analyzers = [
+        FakeAnalyzer("timeout", stdout="timeout-output" * 2_000),
+        FakeAnalyzer("nonzero", stdout="nonzero-output"),
+        FakeAnalyzer("broken", stdout="malformed-output"),
+    ]
+
+    def failure_runner(analyzer, context, timeout):
+        if analyzer.name == "timeout":
+            return RawAnalyzerResult(
+                name=analyzer.name,
+                available=True,
+                stdout=analyzer.stdout,
+                stderr="password=do-not-publish",
+                version="fixture-1",
+                error="timeout after 1s",
+            )
+        if analyzer.name == "nonzero":
+            return RawAnalyzerResult(
+                name=analyzer.name,
+                available=True,
+                stdout=analyzer.stdout,
+                stderr="token=do-not-publish",
+                version="fixture-1",
+                exit_code=7,
+            )
+        return RawAnalyzerResult(
+            name=analyzer.name,
+            available=True,
+            stdout=analyzer.stdout,
+            stderr="secret=do-not-publish",
+            version="fixture-1",
+        )
+
+    report = scan_repository(
+        tmp_path,
+        config={"project": {"name": "failure-states"}},
+        analyzers=analyzers,
+        runner=failure_runner,
+        write_reports=False,
+    )
+
+    statuses = {
+        item.source_tool: item
+        for item in report.evidence
+        if item.kind == "analyzer-status"
+    }
+    assert {item.raw_value for item in statuses.values()} == {"parse-incomplete"}
+    assert "timeout after 1s" in statuses["timeout"].excerpt
+    assert "code 7" in statuses["nonzero"].excerpt
+    assert "could not be parsed" in statuses["broken"].excerpt
+    assert all(len(item.excerpt) <= 500 for item in statuses.values())
+    assert all(item.provenance is not None and not item.provenance.parse_complete for item in statuses.values())
+
+    rendered = render_json(report)
+    assert "do-not-publish" not in rendered
+    assert len((tmp_path / ".code-health" / "raw" / "timeout.out").read_text(encoding="utf-8")) > 10_000
+
+
+def test_runner_degrades_capability_setup_errors_to_unavailable(tmp_path: Path) -> None:
+    class BrokenCapability:
+        name = "broken-capability"
+
+        def is_available(self) -> bool:
+            raise RuntimeError("capability check failed")
+
+    result = run_analyzer(BrokenCapability(), ScanContext(repo_root=str(tmp_path)))
+
+    assert result.available is False
+    assert result.error == "tool not found on PATH"
+    assert result.raw_path.endswith("broken-capability.out")
+
+
+def test_fixture_scan_produces_schema_valid_deterministic_categorized_report(tmp_path: Path) -> None:
+    fixture = materialize_project_fixture(tmp_path / "fixture")
+    nloc = {
+        "src/calculations.py": 700,
+        "src/stable.py": 20,
+        "tests/calculation_checks.py": 120,
+        "generated/client.py": 50,
+        "vendor/dependency.py": 40,
+        "config/settings.toml": 10,
+    }
+    analyzers = [
+        FakeAnalyzer("scc", [
+            MetricObservation("file", path, {
+                "language": detect_language(path), "loc": value + 10, "nloc": value,
+            })
+            for path, value in nloc.items()
+        ]),
+        FakeAnalyzer("lizard", [MetricObservation("function", "src/calculations.py", {
+            "qualified_name": "complex_decision", "start_line": 4, "end_line": 21,
+            "nloc": 51, "cyclomatic_complexity": 11,
+        })]),
+        FakeAnalyzer("jscpd", [MetricObservation("duplication", "src/calculations.py", {
+            "duplicated_lines": 100,
+        })]),
+        FakeAnalyzer("git-history", [MetricObservation("churn", "src/calculations.py", {
+            "churn_90d": 10, "contributors_90d": 3,
+        })]),
+    ]
+
+    config = {
+        "project": {"name": "fixture-project"},
+        "thresholds": {
+            "file_nloc_review": 300,
+            "file_nloc_high": 500,
+            "function_nloc_review": 50,
+            "cyclomatic_complexity_review": 10,
+            "duplication_ratio_review": 0.10,
+        },
+    }
+    first = scan_repository(
+        fixture,
+        config=config,
+        config_hash="fixture-config",
+        analyzers=analyzers,
+        runner=fake_runner,
+    )
+    first_bytes = (fixture / ".code-health" / "reports" / "report.json").read_bytes()
+    second = scan_repository(
+        fixture,
+        config=config,
+        config_hash="fixture-config",
+        analyzers=analyzers,
+        runner=fake_runner,
+    )
+    second_bytes = (fixture / ".code-health" / "reports" / "report.json").read_bytes()
+
+    parsed = ReportDocument.model_validate_json(first_bytes)
+    assert parsed.schema_version == 1
+    assert first_bytes == second_bytes
+    assert render_json(first) == render_json(second)
+    assert {metric.path: metric.category for metric in first.files} == {
+        "src/calculations.py": "production",
+        "src/stable.py": "production",
+        "tests/calculation_checks.py": "test",
+        "generated/client.py": "generated",
+        "vendor/dependency.py": "vendor",
+        "config/settings.toml": "config",
+    }
+    assert [risk.path for risk in first.risks[:2]] == ["src/calculations.py", "config/settings.toml"]
+    assert first.risks[0].refactor_priority == 21
+    assert all(metric.provenance.config_hash == "fixture-config" for metric in first.files)
+    assert all(metric.provenance.parse_complete for metric in first.files)
+    loaded = read_json_report(fixture / ".code-health" / "reports" / "report.json")
+    assert render_json(loaded) == second_bytes.decode("utf-8")

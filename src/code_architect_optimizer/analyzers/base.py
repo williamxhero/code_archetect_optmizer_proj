@@ -67,30 +67,57 @@ def run_analyzer(analyzer: Analyzer, context: ScanContext, timeout: int = 300) -
     raw_dir = os.path.join(context.repo_root, context.work_dir, "raw")
     os.makedirs(raw_dir, exist_ok=True)
     raw_path = _raw_path(raw_dir, analyzer.name)
-    if not analyzer.is_available():
+    try:
+        available = analyzer.is_available()
+    except Exception:  # noqa: BLE001 - a broken capability must not stop a scan
+        available = False
+    if not available:
         _write_raw(raw_path)
         return RawAnalyzerResult(
             name=analyzer.name, available=False, raw_path=raw_path,
             error="tool not found on PATH",
         )
-    cmd = analyzer.build_command(context)
-    version = analyzer.tool_version()
+
+    try:
+        cmd = analyzer.build_command(context)
+    except Exception as exc:  # noqa: BLE001 - degrade one analyzer only
+        _write_raw(raw_path)
+        return RawAnalyzerResult(
+            name=analyzer.name, available=True, raw_path=raw_path,
+            error=str(exc)[:300],
+        )
+
+    try:
+        version = analyzer.tool_version()
+    except Exception:  # noqa: BLE001 - version metadata is optional
+        version = "unknown"
+
     try:
         proc = subprocess.run(
             cmd, cwd=context.repo_root, capture_output=True, text=True,
             timeout=timeout, encoding="utf-8", errors="replace",
         )
-        _write_raw(raw_path, proc.stdout)
+        stdout = _text_output(proc.stdout)
+        stderr = _text_output(proc.stderr)
+        _write_raw(raw_path, stdout)
         return RawAnalyzerResult(
             name=analyzer.name, available=True, exit_code=proc.returncode,
-            stdout=proc.stdout or "", stderr=proc.stderr or "",
-            version=version, raw_path=raw_path,
+            stdout=stdout, stderr=stderr, version=version, raw_path=raw_path,
         )
     except subprocess.TimeoutExpired as exc:
-        _write_raw(raw_path, exc.stdout if isinstance(exc.stdout, str) else "")
+        stdout = _text_output(exc.stdout)
+        stderr = _text_output(exc.stderr)
+        _write_raw(raw_path, stdout)
         return RawAnalyzerResult(
             name=analyzer.name, available=True, raw_path=raw_path,
-            version=version, error=f"timeout after {timeout}s",
+            stdout=stdout, stderr=stderr, version=version,
+            error=f"timeout after {timeout}s",
+        )
+    except FileNotFoundError:
+        _write_raw(raw_path)
+        return RawAnalyzerResult(
+            name=analyzer.name, available=False, raw_path=raw_path,
+            version=version, error="tool not found on PATH",
         )
     except Exception as exc:  # noqa: BLE001 - degraded, never fatal
         _write_raw(raw_path)
@@ -98,6 +125,12 @@ def run_analyzer(analyzer: Analyzer, context: ScanContext, timeout: int = 300) -
             name=analyzer.name, available=True, raw_path=raw_path,
             version=version, error=str(exc)[:300],
         )
+
+
+def _text_output(value: object) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value or "")
 
 
 def config_digest_for(context: ScanContext) -> str:
