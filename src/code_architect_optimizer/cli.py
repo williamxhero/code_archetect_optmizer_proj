@@ -9,6 +9,11 @@ from typing import Any, NoReturn
 
 import typer
 
+from code_architect_optimizer.baseline.compare import BaselineError, compare as compare_baseline, gate
+from code_architect_optimizer.baseline.store import (
+    load_baseline_checked,
+    save_baseline_file,
+)
 from code_architect_optimizer.config.defaults import DEFAULT_TOML
 from code_architect_optimizer.config.loader import DEFAULTS, load_config
 from code_architect_optimizer.reports import read_json_report, render_json, render_markdown
@@ -17,7 +22,7 @@ from code_architect_optimizer.scan import scan_repository
 app = typer.Typer(
     help=(
         "Deterministic code-health analysis.\n\n"
-        "Implemented commands: init, scan, report, explain.\n"
+        "Implemented commands: init, scan, report, compare, explain.\n"
         "Not implemented in this phase: ai-review, history."
     )
 )
@@ -42,6 +47,52 @@ def _validate_config(config: dict[str, Any]) -> None:
         value = config["thresholds"][key]
         if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
             raise ValueError(f"thresholds.{key} must be a finite nonnegative number")
+    mode = config["ci"].get("mode")
+    if mode not in {"report", "ratchet", "strict"}:
+        raise ValueError("ci.mode must be 'report', 'ratchet', or 'strict'")
+    fail_on = config["ci"].get("fail_on")
+    if not isinstance(fail_on, list) or any(item not in {"critical", "high", "medium", "low", "info"} for item in fail_on):
+        raise ValueError("ci.fail_on must be an array of severities")
+
+
+def _selected_path(repo_root: Path, selected: Path | None, default: str) -> Path:
+    path = selected or Path(default)
+    return path if path.is_absolute() else repo_root / path
+
+
+def _baseline_rules(config: dict[str, Any]) -> dict[str, Any]:
+    return dict(config.get("thresholds", {}))
+
+
+def _display_number(value: Any) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    return str(int(number)) if number.is_integer() else str(number)
+
+
+def _finding_detail(category: str, finding: dict[str, Any]) -> str:
+    if category == "fixed":
+        key = str(finding.get("key", ""))
+        rule_id, path, line = (key.split("::", 2) + ["", "", ""])[:3]
+        severity = finding.get("severity", "info")
+        return f"FIXED: {severity} {rule_id} {path}:{line} (was {_display_number(finding.get('actual', ''))})"
+    severity = finding.get("severity", "info")
+    rule_id = finding.get("rule_id", "unknown")
+    path = finding.get("path", "")
+    line = finding.get("line", 0)
+    detail = f"({_display_number(finding.get('actual', ''))} > {_display_number(finding.get('threshold', ''))})"
+    return f"{category.upper()}: {severity} {rule_id} {path}:{line} {detail}"
+
+
+def _print_comparison(comparison: dict[str, Any]) -> None:
+    categories = ("new", "worsened", "unchanged", "fixed")
+    counts = ", ".join(f"{len(comparison[name])} {name}" for name in categories)
+    typer.echo(f"Baseline comparison: {counts}")
+    for category in categories:
+        for finding in comparison[category]:
+            typer.echo(_finding_detail(category, finding))
 
 
 @app.command("init")
@@ -89,6 +140,8 @@ def scan(
         "--output",
         help="Report directory relative to the repository (default: .code-health/reports).",
     ),
+    baseline: Path | None = typer.Option(None, "--baseline", help="Baseline file for CI gating."),
+    update_baseline: bool = typer.Option(False, "--update-baseline", help="Write the completed scan as the baseline."),
     repo_root: Path = typer.Argument(Path("."), exists=True, file_okay=False, resolve_path=True),
 ) -> None:
     """Run the analyzer pipeline and write JSON and Markdown reports."""
@@ -124,6 +177,82 @@ def scan(
         )
     typer.echo(f"JSON report: {report_dir / 'report.json'}")
     typer.echo(f"Markdown report: {report_dir / 'report.md'}")
+
+    mode = config["ci"]["mode"]
+    fail_on = config["ci"]["fail_on"]
+    baseline_file = _selected_path(repo_root, baseline, ".code-health/baseline.json")
+    if mode == "report":
+        comparison = {"new": [], "worsened": [], "fixed": [], "unchanged": []}
+    else:
+        try:
+            loaded_baseline = load_baseline_checked(str(baseline_file))
+        except BaselineError as exc:
+            _error(f"could not load baseline at {baseline_file}: {exc}")
+        comparison = compare_baseline(report.findings, loaded_baseline)
+
+    passed, reason = gate(mode, comparison, fail_on, report.findings)
+    typer.echo(f"CI gate: {reason}")
+    if not passed:
+        raise typer.Exit(code=1)
+    if update_baseline:
+        try:
+            safe_report = read_json_report(report_dir / "report.json")
+            save_baseline_file(
+                str(baseline_file), safe_report.repository, safe_report.commit,
+                _baseline_rules(config), safe_report.findings,
+            )
+        except (OSError, ValueError) as exc:
+            _error(f"could not write baseline at {baseline_file}: {exc}")
+        typer.echo(f"Baseline: {baseline_file}")
+
+
+@app.command("compare")
+def compare(
+    baseline: Path = typer.Option(
+        Path(".code-health/baseline.json"),
+        "--baseline",
+        help="Baseline JSON file to compare against.",
+    ),
+    update_baseline: bool = typer.Option(
+        False,
+        "--update-baseline",
+        help="Write the current report findings as the selected baseline.",
+    ),
+    repo_root: Path = typer.Argument(Path("."), exists=True, file_okay=False, resolve_path=True),
+) -> None:
+    """Compare the saved scan report with a known-findings baseline."""
+    report_path = repo_root / ".code-health" / "reports" / "report.json"
+    if not report_path.is_file():
+        _error(f"no scan report found at {report_path}; run 'code-health scan' first")
+    baseline_file = _selected_path(repo_root, baseline, ".code-health/baseline.json")
+    try:
+        report_document = read_json_report(report_path)
+    except (OSError, ValueError) as exc:
+        _error(f"could not read report at {report_path}: {exc}")
+
+    if baseline_file.is_file():
+        try:
+            baseline_document = load_baseline_checked(str(baseline_file))
+        except BaselineError as exc:
+            _error(f"could not load baseline at {baseline_file}: {exc}")
+    elif update_baseline:
+        baseline_document = None
+    else:
+        _error(f"could not load baseline at {baseline_file}: baseline does not exist")
+
+    comparison = compare_baseline(report_document.findings, baseline_document)
+    _print_comparison(comparison)
+    if update_baseline:
+        try:
+            config, _ = load_config(str(repo_root), "code-health.toml")
+            _validate_config(config)
+            save_baseline_file(
+                str(baseline_file), report_document.repository, report_document.commit,
+                _baseline_rules(config), report_document.findings,
+            )
+        except (OSError, ValueError) as exc:
+            _error(f"could not update baseline at {baseline_file}: {exc}")
+        typer.echo(f"Baseline: {baseline_file}")
 
 
 @app.command("report")
