@@ -43,7 +43,7 @@ def _validate_config(config: dict[str, Any]) -> None:
             raise ValueError(f"thresholds.{key} must be a finite nonnegative number")
 
 
-@app.command()
+@app.command("init")
 def init(
     repo_root: Path = typer.Argument(Path("."), exists=True, file_okay=False, resolve_path=True),
     overwrite: bool = typer.Option(
@@ -73,7 +73,7 @@ def init(
     typer.echo(f"Config: {config_path}")
 
 
-@app.command()
+@app.command("scan")
 def scan(
     changed: bool = typer.Option(False, "--changed", help="Scan changed files only."),
     config_path: Path | None = typer.Option(
