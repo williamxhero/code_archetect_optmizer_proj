@@ -52,7 +52,7 @@ class GitHistoryAnalyzer:
             if line.startswith("COMMIT:"):
                 author = line[len("COMMIT:"):].strip().split(" ", 1)[-1]
                 continue
-            if not line or author is None:
+            if not line or author is None or line.endswith(".pyc") or "__pycache__/" in line:
                 continue
             churn[line] = churn.get(line, 0) + 1
             authors.setdefault(line, set()).add(author)

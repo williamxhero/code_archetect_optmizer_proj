@@ -6,6 +6,14 @@ from code_architect_optimizer.domain.models import (
     FunctionMetric,
     ScanContext,
 )
+from code_architect_optimizer.scan import ScanService, scan_repository
 
-__all__ = ["FileMetric", "Finding", "FunctionMetric", "ScanContext"]
+__all__ = [
+    "FileMetric",
+    "Finding",
+    "FunctionMetric",
+    "ScanContext",
+    "ScanService",
+    "scan_repository",
+]
 __version__ = "0.1.0"

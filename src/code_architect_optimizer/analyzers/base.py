@@ -53,11 +53,26 @@ def scrub_env(env: dict[str, str]) -> dict[str, str]:
     return {k: ("***" if any(s in k.lower() for s in SECRET_KEYS) else v) for k, v in env.items()}
 
 
+def _raw_path(raw_dir: str, analyzer_name: str) -> str:
+    safe_name = "".join(char if char.isalnum() or char in "-_" else "_" for char in analyzer_name)
+    return os.path.join(raw_dir, f"{safe_name}.out")
+
+
+def _write_raw(path: str, stdout: str = "") -> None:
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(stdout or "")
+
+
 def run_analyzer(analyzer: Analyzer, context: ScanContext, timeout: int = 300) -> RawAnalyzerResult:
     raw_dir = os.path.join(context.repo_root, context.work_dir, "raw")
     os.makedirs(raw_dir, exist_ok=True)
+    raw_path = _raw_path(raw_dir, analyzer.name)
     if not analyzer.is_available():
-        return RawAnalyzerResult(name=analyzer.name, available=False, error="tool not found on PATH")
+        _write_raw(raw_path)
+        return RawAnalyzerResult(
+            name=analyzer.name, available=False, raw_path=raw_path,
+            error="tool not found on PATH",
+        )
     cmd = analyzer.build_command(context)
     version = analyzer.tool_version()
     try:
@@ -65,18 +80,24 @@ def run_analyzer(analyzer: Analyzer, context: ScanContext, timeout: int = 300) -
             cmd, cwd=context.repo_root, capture_output=True, text=True,
             timeout=timeout, encoding="utf-8", errors="replace",
         )
-        raw_path = os.path.join(raw_dir, f"{analyzer.name}.out")
-        with open(raw_path, "w", encoding="utf-8") as fh:
-            fh.write(proc.stdout or "")
+        _write_raw(raw_path, proc.stdout)
         return RawAnalyzerResult(
             name=analyzer.name, available=True, exit_code=proc.returncode,
             stdout=proc.stdout or "", stderr=proc.stderr or "",
             version=version, raw_path=raw_path,
         )
-    except subprocess.TimeoutExpired:
-        return RawAnalyzerResult(name=analyzer.name, available=True, error=f"timeout after {timeout}s")
+    except subprocess.TimeoutExpired as exc:
+        _write_raw(raw_path, exc.stdout if isinstance(exc.stdout, str) else "")
+        return RawAnalyzerResult(
+            name=analyzer.name, available=True, raw_path=raw_path,
+            version=version, error=f"timeout after {timeout}s",
+        )
     except Exception as exc:  # noqa: BLE001 - degraded, never fatal
-        return RawAnalyzerResult(name=analyzer.name, available=True, error=str(exc)[:300])
+        _write_raw(raw_path)
+        return RawAnalyzerResult(
+            name=analyzer.name, available=True, raw_path=raw_path,
+            version=version, error=str(exc)[:300],
+        )
 
 
 def config_digest_for(context: ScanContext) -> str:
