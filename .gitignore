@@ -1,0 +1,24 @@
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Build and editable-install metadata
+build/
+dist/
+*.egg-info/
+
+# Local code-health output (reports and raw analyzer output)
+.code-health/
+
+# Local agent/worktree state
+.claude/worktrees/
+
+# Local secrets and environment files
+.env
+.env.*
+!.env.example

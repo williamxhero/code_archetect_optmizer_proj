@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "code-architect-optimizer"
 version = "0.1.0"
 description = "Deterministic code-health and architecture-analysis pipeline for AI-assisted development"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = ["typer>=0.12", "pydantic>=2.0"]
 
