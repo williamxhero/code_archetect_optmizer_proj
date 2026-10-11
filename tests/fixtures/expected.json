@@ -1,0 +1,33 @@
+{
+  "project": {
+    "files": {
+      "src/calculations.py": {"category": "production", "language": "python"},
+      "src/stable.py": {"category": "production", "language": "python"},
+      "tests/calculation_checks.py": {"category": "test", "language": "python"},
+      "generated/client.py": {"category": "generated", "language": "python"},
+      "vendor/dependency.py": {"category": "vendor", "language": "python"},
+      "config/settings.toml": {"category": "config", "language": "unknown"}
+    },
+    "complex_function": {
+      "path": "src/calculations.py",
+      "qualified_name": "complex_decision",
+      "minimum_cyclomatic_complexity": 10
+    },
+    "duplicate_functions": {
+      "paths": ["src/calculations.py", "src/calculations.py"],
+      "qualified_names": ["normalize_values", "normalize_values_copy"],
+      "minimum_matching_body_lines": 5
+    }
+  },
+  "git_history": {
+    "commits": [
+      {"author": "Alice Example", "paths": ["README.md", "src/metrics.py"]},
+      {"author": "Bob Example", "paths": ["src/metrics.py"]},
+      {"author": "Carol Example", "paths": ["README.md", "src/metrics.py"]}
+    ],
+    "observations": {
+      "README.md": {"churn_90d": 2, "contributors_90d": 2},
+      "src/metrics.py": {"churn_90d": 3, "contributors_90d": 3}
+    }
+  }
+}
