@@ -1,0 +1,126 @@
+{
+  "commit": "abc123",
+  "config_hash": "cfg456",
+  "evidence": [
+    {
+      "excerpt": "nloc=600",
+      "kind": "metric",
+      "metric": "nloc",
+      "path": "a.py",
+      "provenance": {
+        "commit": "abc123",
+        "config_hash": "cfg456",
+        "is_estimated": false,
+        "parse_complete": true,
+        "scanned_at": "",
+        "source_tool": "scc",
+        "tool_version": "3.2.0"
+      },
+      "raw_value": 600,
+      "source_tool": "scc",
+      "tool_version": "3.2.0"
+    }
+  ],
+  "files": [
+    {
+      "category": "unknown",
+      "churn_90d": 0,
+      "cognitive_complexity": null,
+      "complexity": 0,
+      "contributors_90d": 0,
+      "duplication_ratio": 0.0,
+      "fan_in": 0,
+      "fan_out": 0,
+      "language": "unknown",
+      "loc": 0,
+      "nloc": 600,
+      "path": "a.py",
+      "provenance": {
+        "commit": "abc123",
+        "config_hash": "cfg456",
+        "is_estimated": false,
+        "parse_complete": true,
+        "scanned_at": "",
+        "source_tool": "scc",
+        "tool_version": "3.2.0"
+      }
+    },
+    {
+      "category": "unknown",
+      "churn_90d": 0,
+      "cognitive_complexity": null,
+      "complexity": 0,
+      "contributors_90d": 0,
+      "duplication_ratio": 0.0,
+      "fan_in": 0,
+      "fan_out": 0,
+      "language": "unknown",
+      "loc": 0,
+      "nloc": 10,
+      "path": "z.py",
+      "provenance": {
+        "commit": "abc123",
+        "config_hash": "cfg456",
+        "is_estimated": false,
+        "parse_complete": true,
+        "scanned_at": "",
+        "source_tool": "scc",
+        "tool_version": "3.2.0"
+      }
+    }
+  ],
+  "findings": [
+    {
+      "actual": 600.0,
+      "evidence_source": "unknown",
+      "line": 0,
+      "message": "",
+      "metric": "",
+      "path": "a.py",
+      "rule_id": "file.nloc.high",
+      "severity": "high",
+      "threshold": 500.0
+    },
+    {
+      "actual": 600.0,
+      "evidence_source": "unknown",
+      "line": 0,
+      "message": "",
+      "metric": "",
+      "path": "a.py",
+      "rule_id": "file.nloc.review",
+      "severity": "medium",
+      "threshold": 300.0
+    }
+  ],
+  "functions": [],
+  "repository": "example-repository",
+  "risks": [
+    {
+      "change_pressure": 0.0,
+      "path": "a.py",
+      "reasons": [
+        "large file"
+      ],
+      "refactor_priority": 6.0,
+      "risk_score": 3.0
+    },
+    {
+      "change_pressure": 0.0,
+      "path": "z.py",
+      "reasons": [],
+      "refactor_priority": 1.0,
+      "risk_score": 1.0
+    }
+  ],
+  "scanned_at": "",
+  "schema_version": 1,
+  "tool_versions": {
+    "scc": "3.2.0",
+    "z-tool": "2.0"
+  },
+  "unavailable_tools": [
+    "jscpd",
+    "lizard"
+  ]
+}

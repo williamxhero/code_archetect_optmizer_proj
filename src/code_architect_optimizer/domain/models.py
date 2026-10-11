@@ -26,6 +26,24 @@ class Provenance(BaseModel):
     parse_complete: bool = True
 
 
+class Evidence(BaseModel):
+    """Bounded, report-safe evidence for a normalized observation.
+
+    Analyzer stdout/stderr and environment data deliberately have no fields in
+    this model.  Renderers can therefore preserve the value needed to explain
+    a finding without making raw process output part of the public schema.
+    """
+
+    kind: str = "metric"
+    source_tool: str = "unknown"
+    tool_version: str = "unknown"
+    path: str = ""
+    metric: str = ""
+    raw_value: str | int | float | bool | None = None
+    excerpt: str = ""
+    provenance: Provenance | None = None
+
+
 class FileMetric(BaseModel):
     path: str
     language: str = "unknown"

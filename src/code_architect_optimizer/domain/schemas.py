@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from code_architect_optimizer.domain.models import (
     REPORT_SCHEMA_VERSION,
+    Evidence,
     FileMetric,
     Finding,
     FunctionMetric,
@@ -14,7 +17,9 @@ from code_architect_optimizer.domain.models import (
 
 
 class ReportDocument(BaseModel):
-    schema_version: int = REPORT_SCHEMA_VERSION
+    """Validated input/output document for the deterministic report renderers."""
+
+    schema_version: Literal[REPORT_SCHEMA_VERSION] = REPORT_SCHEMA_VERSION
     repository: str = "unknown"
     commit: str = "unknown"
     scanned_at: str = ""
@@ -25,3 +30,4 @@ class ReportDocument(BaseModel):
     findings: list[Finding] = Field(default_factory=list)
     risks: list[RiskScore] = Field(default_factory=list)
     unavailable_tools: list[str] = Field(default_factory=list)
+    evidence: list[Evidence] = Field(default_factory=list)
