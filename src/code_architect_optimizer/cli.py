@@ -11,12 +11,13 @@ import typer
 
 from code_architect_optimizer.config.defaults import DEFAULT_TOML
 from code_architect_optimizer.config.loader import DEFAULTS, load_config
+from code_architect_optimizer.reports import read_json_report, render_json, render_markdown
 from code_architect_optimizer.scan import scan_repository
 
 app = typer.Typer(
     help=(
         "Deterministic code-health analysis.\n\n"
-        "Implemented commands: init, scan.\n"
+        "Implemented commands: init, scan, report, explain.\n"
         "Not implemented in this phase: ai-review, history."
     )
 )
@@ -123,3 +124,82 @@ def scan(
         )
     typer.echo(f"JSON report: {report_dir / 'report.json'}")
     typer.echo(f"Markdown report: {report_dir / 'report.md'}")
+
+
+@app.command("report")
+def report(
+    format: str = typer.Option("markdown", "--format", help="Report format: json or markdown."),
+    repo_root: Path = typer.Argument(Path("."), exists=True, file_okay=False, resolve_path=True),
+) -> None:
+    """Print the saved JSON or Markdown scan report."""
+    if format not in {"json", "markdown"}:
+        _error("--format must be 'json' or 'markdown'")
+
+    report_dir = repo_root / ".code-health" / "reports"
+    artifact = report_dir / ("report.json" if format == "json" else "report.md")
+    if not artifact.is_file():
+        _error(f"no {format} report found at {artifact}; run 'code-health scan' first")
+
+    try:
+        document = read_json_report(report_dir / "report.json")
+        output = render_json(document) if format == "json" else render_markdown(document)
+    except (OSError, ValueError) as exc:
+        _error(f"could not read report at {report_dir}: {exc}")
+    typer.echo(output, nl=False)
+
+
+@app.command("explain")
+def explain(
+    file: str = typer.Argument(
+        ...,
+        metavar="FILE",
+        help="Repository-relative path of the file to explain.",
+    ),
+    repo_root: Path = typer.Argument(Path("."), exists=True, file_okay=False, resolve_path=True),
+) -> None:
+    """Explain a file's metrics, findings, risk, and evidence."""
+    report_dir = repo_root / ".code-health" / "reports"
+    report_path = report_dir / "report.json"
+    if not report_path.is_file():
+        _error(f"no scan report found at {report_path}; run 'code-health scan' first")
+
+    try:
+        document = read_json_report(report_path)
+        config, _ = load_config(str(repo_root), "code-health.toml")
+        _validate_config(config)
+    except (OSError, ValueError) as exc:
+        _error(f"could not read report or configuration: {exc}")
+
+    requested_path = Path(file)
+    absolute_path = (
+        requested_path.resolve()
+        if requested_path.is_absolute()
+        else (repo_root / requested_path).resolve()
+    )
+    try:
+        relative_path = absolute_path.relative_to(repo_root.resolve()).as_posix()
+    except ValueError:
+        _error("file is outside the repository")
+
+    payload = json.loads(render_json(document))
+    metrics = next((item for item in payload["files"] if item["path"] == relative_path), None)
+    if metrics is None:
+        _error("file not found in the latest scan report")
+
+    findings = [item for item in payload["findings"] if item["path"] == relative_path]
+    functions = [item for item in payload["functions"] if item["file_path"] == relative_path]
+    risks = [item for item in payload["risks"] if item["path"] == relative_path]
+    evidence = [item for item in payload["evidence"] if item["path"] == relative_path]
+    typer.echo(f"File: {relative_path}")
+    typer.echo("Metrics:")
+    typer.echo(json.dumps(metrics, ensure_ascii=False, sort_keys=True, indent=2))
+    typer.echo("Thresholds:")
+    typer.echo(json.dumps(config["thresholds"], ensure_ascii=False, sort_keys=True, indent=2))
+    typer.echo("Findings:")
+    typer.echo(json.dumps(findings, ensure_ascii=False, sort_keys=True, indent=2))
+    typer.echo("Functions:")
+    typer.echo(json.dumps(functions, ensure_ascii=False, sort_keys=True, indent=2))
+    typer.echo("Risk:")
+    typer.echo(json.dumps(risks, ensure_ascii=False, sort_keys=True, indent=2))
+    typer.echo("Evidence:")
+    typer.echo(json.dumps(evidence, ensure_ascii=False, sort_keys=True, indent=2))
