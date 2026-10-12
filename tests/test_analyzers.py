@@ -30,6 +30,29 @@ def test_scc_parses_file_level_metrics() -> None:
     assert observations[0].data == {"language": "Python", "loc": 42, "nloc": 31}
 
 
+def test_scc_parses_nested_by_file_output_for_god_py() -> None:
+    result = RawAnalyzerResult(
+        name="scc",
+        available=True,
+        stdout=(
+            '[{"Name":"Python","Bytes":1234,"CodeBytes":0,"Lines":160,"Code":118,'
+            '"Comment":12,"Blank":30,"Complexity":8,"Count":1,"WeightedComplexity":0,'
+            '"Files":[{"Language":"Python","PossibleLanguages":["Python"],'
+            '"Filename":"god.py","Extension":"py","Location":"god.py",'
+            '"Symlocation":"","Bytes":1234,"Lines":160,"Code":118,"Comment":12,'
+            '"Blank":30,"Complexity":8,"WeightedComplexity":0,"Hash":null,'
+            '"Binary":false,"Minified":false,"Generated":false,"EndPoint":0,"Uloc":0}]'
+            '}]'
+        ),
+    )
+
+    observations = SccAnalyzer().parse(result, ScanContext(repo_root="."))
+
+    god = next(observation for observation in observations if observation.path == "god.py")
+    assert god.data["nloc"] > 0
+    assert god.data == {"language": "Python", "loc": 160, "nloc": 118}
+
+
 def test_lizard_reports_distribution_version(monkeypatch) -> None:
     monkeypatch.setattr(
         "code_architect_optimizer.analyzers.lizard.metadata.version",

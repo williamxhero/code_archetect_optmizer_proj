@@ -41,14 +41,25 @@ class SccAnalyzer:
         for entry in payload if isinstance(payload, list) else []:
             if not isinstance(entry, dict):
                 continue
-            path = str(entry.get("Location") or entry.get("Filename") or "")
-            if not path:
-                continue
-            loc = int(entry.get("Lines") or 0)
-            code = int(entry.get("Code") or 0)
-            obs.append(MetricObservation(kind="file", path=path, data={
-                "language": str(entry.get("Language") or "unknown"),
-                "loc": loc,
-                "nloc": code,
-            }))
+            file_entries = entry.get("Files")
+            if not isinstance(file_entries, list):
+                file_entries = [entry]
+            for file_entry in file_entries:
+                if not isinstance(file_entry, dict):
+                    continue
+                path = str(file_entry.get("Location") or file_entry.get("Filename") or "")
+                if not path:
+                    continue
+                loc = int(file_entry.get("Lines") or 0)
+                code = int(file_entry.get("Code") or 0)
+                obs.append(MetricObservation(kind="file", path=path, data={
+                    "language": str(
+                        file_entry.get("Language")
+                        or entry.get("Language")
+                        or entry.get("Name")
+                        or "unknown"
+                    ),
+                    "loc": loc,
+                    "nloc": code,
+                }))
         return obs
