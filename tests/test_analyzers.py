@@ -46,3 +46,22 @@ def test_jscpd_reports_version_from_nonempty_command_output(monkeypatch) -> None
     )
 
     assert JscpdAnalyzer().tool_version() == "5.4.1"
+
+
+def test_jscpd_tool_version_falls_back_to_cmd_for_windows_shim(monkeypatch) -> None:
+    shim = r"C:\\tools\\jscpd.cmd"
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append((args, kwargs))
+        if args == ["jscpd", "--version"]:
+            raise FileNotFoundError
+        return SimpleNamespace(stdout="5.4.1\n", stderr="")
+
+    monkeypatch.setattr("code_architect_optimizer.analyzers.jscpd.which", lambda name: shim)
+    monkeypatch.setattr("code_architect_optimizer.analyzers.jscpd.os.name", "nt")
+    monkeypatch.setattr("code_architect_optimizer.analyzers.jscpd.subprocess.run", fake_run)
+
+    assert JscpdAnalyzer().tool_version() == "5.4.1"
+    assert calls[-1][0] == ["cmd", "/c", shim, "--version"]
+    assert calls[-1][1].get("shell", False) is False

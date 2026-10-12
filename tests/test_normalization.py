@@ -16,6 +16,12 @@ def test_normalize_path_removes_relative_prefix_and_repository_root(tmp_path) ->
     assert normalize_path(absolute_path, repository_root) == "src/service.py"
 
 
+def test_normalize_path_handles_windows_separators_on_posix_host(monkeypatch) -> None:
+    monkeypatch.setattr("code_architect_optimizer.normalization.metrics.os.sep", "/")
+
+    assert normalize_path(r".\src\service.py") == "src/service.py"
+
+
 def test_analyzer_observation_becomes_a_classified_metric() -> None:
     observation = MetricObservation(
         kind="file",

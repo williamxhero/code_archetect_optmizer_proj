@@ -6,9 +6,9 @@ import os
 
 
 def normalize_path(path: str, repo_root: str = "") -> str:
-    p = path.replace(os.sep, "/").lstrip("./")
+    p = path.replace("\\", "/").replace(os.sep, "/").lstrip("./")
     if repo_root:
-        root = repo_root.replace(os.sep, "/").rstrip("/")
+        root = repo_root.replace("\\", "/").replace(os.sep, "/").rstrip("/")
         if p.startswith(root):
             p = p[len(root):].lstrip("/")
     return p
