@@ -30,13 +30,14 @@ def select_changed(repo_root: str) -> ChangedSelection:
     try:
         if Path(_git(root, "rev-parse", "--show-toplevel").strip()).resolve() != root:
             return ChangedSelection()
-        candidates: list[str] = []
+        # A pushed feature branch commonly tracks the same-name remote branch;
+        # prefer default-branch refs so that upstream cannot make the delta empty.
+        candidates = ["refs/remotes/origin/HEAD", "refs/remotes/origin/main",
+                      "refs/heads/main", "refs/remotes/origin/master", "refs/heads/master"]
         try:
             candidates.append(_git(root, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}").strip())
         except subprocess.SubprocessError:
             pass
-        candidates.extend(["refs/remotes/origin/HEAD", "refs/remotes/origin/main",
-                           "refs/heads/main", "refs/remotes/origin/master", "refs/heads/master"])
         base = ""
         for candidate in candidates:
             try:

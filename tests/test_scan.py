@@ -199,6 +199,40 @@ def test_changed_only_scans_clean_branch_delta_and_keeps_commit_provenance(tmp_p
     assert report.files[0].provenance.commit == report.commit
 
 
+@pytest.mark.parametrize("default_branch", ["main", "trunk"])
+def test_changed_only_prefers_default_branch_over_same_name_upstream(
+    tmp_path: Path, default_branch: str,
+) -> None:
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "changed.py").write_text("initial\n", encoding="utf-8")
+    (src / "stable.py").write_text("stable\n", encoding="utf-8")
+    _init_git_repo(tmp_path)
+    _commit(tmp_path, "baseline")
+
+    remote = tmp_path.parent / f"{tmp_path.name}-remote.git"
+    subprocess.run(["git", "init", "--bare", "--quiet", "-b", default_branch, str(remote)], cwd=tmp_path, check=True)
+    subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=tmp_path, check=True)
+    subprocess.run(["git", "push", "--quiet", "origin", f"main:{default_branch}"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "remote", "set-head", "origin", default_branch], cwd=tmp_path, check=True)
+
+    subprocess.run(["git", "switch", "--quiet", "-c", "feature"], cwd=tmp_path, check=True)
+    (src / "changed.py").write_text("branch change\n", encoding="utf-8")
+    _commit(tmp_path, "branch change")
+    subprocess.run(["git", "push", "--quiet", "--set-upstream", "origin", "feature"], cwd=tmp_path, check=True)
+    assert subprocess.run(
+        ["git", "status", "--porcelain"], cwd=tmp_path, check=True,
+        capture_output=True, text=True,
+    ).stdout == ""
+
+    report = _scan_changed_fixture(tmp_path, [
+        MetricObservation("file", "src/changed.py", {"nloc": 10}),
+        MetricObservation("file", "src/stable.py", {"nloc": 20}),
+    ])
+
+    assert [metric.path for metric in report.files] == ["src/changed.py"]
+
+
 def test_changed_only_merges_staged_unstaged_and_untracked_paths(tmp_path: Path) -> None:
     src = tmp_path / "src"
     src.mkdir()
