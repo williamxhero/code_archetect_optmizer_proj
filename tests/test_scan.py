@@ -108,6 +108,55 @@ def test_scan_merges_observations_scores_risks_and_writes_public_artifacts(tmp_p
     assert (tmp_path / ".code-health" / "reports" / "report.md").is_file()
 
 
+@pytest.mark.parametrize(("duplicated_lines", "nloc", "expected_ratio"), [
+    (283, 100, 1.0),
+    (2037, 1000, 1.0),
+    (50, 100, 0.5),
+    (100, 100, 1.0),
+    (0, 100, 0.0),
+    (-10, 100, 0.0),
+    (10, 0, 0.0),
+])
+def test_scan_bounds_duplication_ratio(
+    tmp_path: Path, duplicated_lines: int, nloc: int, expected_ratio: float,
+) -> None:
+    analyzers = [
+        FakeAnalyzer("scc", [
+            MetricObservation("file", "src/app.py", {"nloc": nloc}),
+        ]),
+        FakeAnalyzer("jscpd", [
+            MetricObservation("duplication", "src/app.py", {"duplicated_lines": duplicated_lines}),
+        ]),
+    ]
+
+    report = scan_repository(
+        tmp_path,
+        config={"project": {"name": "duplication-bounds"}},
+        analyzers=analyzers,
+        runner=fake_runner,
+        write_reports=False,
+    )
+
+    assert report.files[0].duplication_ratio == expected_ratio
+
+
+def test_scan_excludes_code_health_artifacts_from_analyzer_observations(tmp_path: Path) -> None:
+    analyzer = FakeAnalyzer("jscpd", [
+        MetricObservation("file", ".code-health/raw/jscpd.out", {"nloc": 8}),
+        MetricObservation("file", "src/app.py", {"nloc": 8}),
+    ])
+
+    report = scan_repository(
+        tmp_path,
+        config={"project": {"name": "work-dir-exclusion"}},
+        analyzers=[analyzer],
+        runner=fake_runner,
+        write_reports=False,
+    )
+
+    assert [metric.path for metric in report.files] == ["src/app.py"]
+
+
 def test_changed_only_scans_diff_paths_and_keeps_commit_provenance(tmp_path: Path) -> None:
     (tmp_path / "src").mkdir()
     changed = tmp_path / "src" / "changed.py"

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from pathlib import Path
 
 from code_architect_optimizer.analyzers.base import (
     Analyzer,
@@ -13,6 +14,11 @@ from code_architect_optimizer.analyzers.base import (
     which,
 )
 from code_architect_optimizer.domain.models import ScanContext
+
+
+_JSCPD_IGNORE = (
+    ".code-health/**,.git/**,.venv/**,node_modules/**,dist/**,build/**,generated/**"
+)
 
 
 class JscpdAnalyzer:
@@ -37,14 +43,22 @@ class JscpdAnalyzer:
         return "unknown"
 
     def build_command(self, context: ScanContext) -> list[str]:
-        out = os.path.join(context.repo_root, context.work_dir, "raw", "jscpd.json")
-        return ["jscpd", ".", "--reporters", "json", "--output",
-                os.path.dirname(out), "--silent"]
+        out = os.path.join(context.repo_root, context.work_dir, "raw", "jscpd-report.json")
+        command = [
+            "jscpd", ".", "--reporters", "json", "--output", os.path.dirname(out),
+            "--ignore", _JSCPD_IGNORE, "--silent",
+        ]
+        executable = which("jscpd")
+        if os.name == "nt" and executable and executable.lower().endswith((".cmd", ".bat")):
+            return ["cmd", "/c", executable, *command[1:]]
+        return command
 
     def parse(self, result: RawAnalyzerResult, context: ScanContext) -> list[MetricObservation]:
         obs: list[MetricObservation] = []
-        report_path = os.path.join(context.repo_root, context.work_dir, "raw", "jscpd.json")
-        if not os.path.isfile(report_path):
+        raw_dir = Path(context.repo_root) / context.work_dir / "raw"
+        report_paths = (raw_dir / "jscpd-report.json", raw_dir / "jscpd.json")
+        report_path = next((path for path in report_paths if path.is_file()), None)
+        if report_path is None:
             return obs
         try:
             with open(report_path, encoding="utf-8") as fh:
