@@ -5,18 +5,26 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .venv/
+.venv-*/
 venv/
 
-# Build and editable-install metadata
+# Build, coverage, and editable-install metadata
 build/
 dist/
 *.egg-info/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
 
-# Local code-health output (reports and raw analyzer output)
+# Local code-health output, reports, raw analyzer output, and logs
 .code-health/
+*.out
+*.log
 
-# Local agent/worktree state
+# Local agent/worktree state and temporary verification trees
 .claude/worktrees/
+worktrees/
 
 # Local secrets and environment files
 .env
