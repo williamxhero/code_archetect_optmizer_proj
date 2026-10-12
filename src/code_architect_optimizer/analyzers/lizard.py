@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
-import subprocess
+from importlib import metadata
 
 from code_architect_optimizer.analyzers.base import (
     Analyzer,
@@ -30,8 +30,7 @@ class LizardAnalyzer:
 
     def tool_version(self) -> str:
         try:
-            import lizard as _lz
-            return str(getattr(_lz, "__version__", "unknown"))
+            return metadata.version("lizard")
         except Exception:  # noqa: BLE001
             return "unknown"
 

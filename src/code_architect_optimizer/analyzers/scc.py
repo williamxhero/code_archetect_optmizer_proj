@@ -28,7 +28,7 @@ class SccAnalyzer:
             return "unknown"
 
     def build_command(self, context: ScanContext) -> list[str]:
-        return ["scc", "--format", "json", "."]
+        return ["scc", "--by-file", "--format", "json", "."]
 
     def parse(self, result: RawAnalyzerResult, context: ScanContext) -> list[MetricObservation]:
         obs: list[MetricObservation] = []
