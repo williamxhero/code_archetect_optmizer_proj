@@ -22,8 +22,12 @@ class JscpdAnalyzer:
         return which("jscpd") is not None
 
     def tool_version(self) -> str:
+        command = ["jscpd", "--version"]
+        executable = which("jscpd")
+        if os.name == "nt" and executable and executable.lower().endswith((".cmd", ".bat")):
+            command = ["cmd", "/c", executable, "--version"]
         try:
-            p = subprocess.run(["jscpd", "--version"], capture_output=True, text=True, timeout=30)
+            p = subprocess.run(command, capture_output=True, text=True, timeout=30)
             for output in (p.stdout, p.stderr):
                 for line in (output or "").splitlines():
                     if line.strip():
