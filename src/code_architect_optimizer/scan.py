@@ -134,7 +134,7 @@ class ScanService:
         for path, lines in duplicate_lines.items():
             file_metric = files[path]
             if file_metric.nloc:
-                file_metric.duplication_ratio = round(lines / file_metric.nloc, 6)
+                file_metric.duplication_ratio = round(min(max(lines / file_metric.nloc, 0.0), 1.0), 6)
 
         normalize_metrics(list(files.values()))
         for function in functions:
