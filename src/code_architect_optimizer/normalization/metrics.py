@@ -6,11 +6,15 @@ import os
 
 
 def normalize_path(path: str, repo_root: str = "") -> str:
-    p = path.replace("\\", "/").replace(os.sep, "/").lstrip("./")
+    p = path.replace("\\", "/").replace(os.sep, "/")
+    while p.startswith("./"):
+        p = p[2:]
     if repo_root:
         root = repo_root.replace("\\", "/").replace(os.sep, "/").rstrip("/")
-        if p.startswith(root):
-            p = p[len(root):].lstrip("/")
+        if p == root:
+            p = ""
+        elif p.startswith(root + "/"):
+            p = p[len(root) + 1:]
     return p
 
 

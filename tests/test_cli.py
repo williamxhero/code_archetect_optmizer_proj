@@ -274,7 +274,7 @@ def test_scan_ci_modes_apply_baseline_gate(
     report = ReportDocument(
         repository="cli-project",
         commit="after",
-        files=[FileMetric(path="src/example.py")],
+        files=[FileMetric(path="src/example.py", category="production")],
         findings=[_baseline_finding("src/example.py", 11)],
     )
 
@@ -287,6 +287,37 @@ def test_scan_ci_modes_apply_baseline_gate(
 
     assert result.exit_code == expected_exit
     assert expected_reason in result.output
+
+
+@pytest.mark.parametrize(
+    ("mode", "reason"),
+    [("report", "report mode never fails"),
+     ("ratchet", "ratchet: no new/worsened findings at gate severities"),
+     ("strict", "strict: no findings at gate severities")],
+)
+def test_scan_ci_modes_ignore_non_production_findings(
+    tmp_path: Path, monkeypatch, mode: str, reason: str,
+) -> None:
+    (tmp_path / "code-health.toml").write_text(
+        f"[ci]\nmode = '{mode}'\nfail_on = ['high']\n", encoding="utf-8",
+    )
+    if mode != "report":
+        save_baseline(str(tmp_path / ".code-health"), "cli-project", "before", {}, [])
+    report = ReportDocument(
+        repository="cli-project",
+        files=[FileMetric(path="tests/test_example.py", category="test", nloc=900)],
+        findings=[_baseline_finding("tests/test_example.py", 900)],
+    )
+
+    def fake_scan(repo_root, *, config_path, changed_only, output_dir):
+        write_report_artifacts(report, repo_root, output_dir=output_dir)
+        return report
+
+    monkeypatch.setattr(cli, "scan_repository", fake_scan)
+    result = runner.invoke(cli.app, ["scan", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert reason in result.output
 
 
 @pytest.mark.parametrize(

@@ -157,35 +157,128 @@ def test_scan_excludes_code_health_artifacts_from_analyzer_observations(tmp_path
     assert [metric.path for metric in report.files] == ["src/app.py"]
 
 
-def test_changed_only_scans_diff_paths_and_keeps_commit_provenance(tmp_path: Path) -> None:
-    (tmp_path / "src").mkdir()
-    changed = tmp_path / "src" / "changed.py"
-    stable = tmp_path / "src" / "stable.py"
-    changed.write_text("initial\n", encoding="utf-8")
-    stable.write_text("stable\n", encoding="utf-8")
-    subprocess.run(["git", "init", "--quiet"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "config", "user.email", "test@example.test"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
-    subprocess.run(["git", "commit", "--quiet", "-m", "baseline"], cwd=tmp_path, check=True)
-    changed.write_text("changed\n", encoding="utf-8")
+def _init_git_repo(path: Path) -> None:
+    subprocess.run(["git", "init", "--quiet", "-b", "main"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.test"], cwd=path, check=True)
 
-    analyzer = FakeAnalyzer("scc", [
-        MetricObservation("file", "src/changed.py", {"nloc": 10}),
-        MetricObservation("file", "src/stable.py", {"nloc": 20}),
-    ])
-    report = scan_repository(
-        tmp_path,
+
+def _commit(path: Path, message: str) -> None:
+    subprocess.run(["git", "add", "."], cwd=path, check=True)
+    subprocess.run(["git", "commit", "--quiet", "-m", message], cwd=path, check=True)
+
+
+def _scan_changed_fixture(path: Path, observations: list[MetricObservation]):
+    return scan_repository(
+        path,
         config={"project": {"name": "changed-project"}},
-        analyzers=[analyzer],
+        analyzers=[FakeAnalyzer("scc", observations)],
         runner=fake_runner,
         changed_only=True,
         write_reports=False,
     )
 
+
+def test_changed_only_scans_clean_branch_delta_and_keeps_commit_provenance(tmp_path: Path) -> None:
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "changed.py").write_text("initial\n", encoding="utf-8")
+    (tmp_path / "src" / "stable.py").write_text("stable\n", encoding="utf-8")
+    _init_git_repo(tmp_path)
+    _commit(tmp_path, "baseline")
+    subprocess.run(["git", "switch", "--quiet", "-c", "feature"], cwd=tmp_path, check=True)
+    (tmp_path / "src" / "changed.py").write_text("changed\n", encoding="utf-8")
+    _commit(tmp_path, "change")
+
+    report = _scan_changed_fixture(tmp_path, [
+        MetricObservation("file", "src/changed.py", {"nloc": 10}),
+        MetricObservation("file", "src/stable.py", {"nloc": 20}),
+    ])
+
     assert [metric.path for metric in report.files] == ["src/changed.py"]
     assert report.commit != "unknown"
     assert report.files[0].provenance.commit == report.commit
+
+
+@pytest.mark.parametrize("default_branch", ["main", "trunk"])
+def test_changed_only_prefers_default_branch_over_same_name_upstream(
+    tmp_path: Path, default_branch: str,
+) -> None:
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "changed.py").write_text("initial\n", encoding="utf-8")
+    (src / "stable.py").write_text("stable\n", encoding="utf-8")
+    _init_git_repo(tmp_path)
+    _commit(tmp_path, "baseline")
+
+    remote = tmp_path.parent / f"{tmp_path.name}-remote.git"
+    subprocess.run(["git", "init", "--bare", "--quiet", "-b", default_branch, str(remote)], cwd=tmp_path, check=True)
+    subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=tmp_path, check=True)
+    subprocess.run(["git", "push", "--quiet", "origin", f"main:{default_branch}"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "remote", "set-head", "origin", default_branch], cwd=tmp_path, check=True)
+
+    subprocess.run(["git", "switch", "--quiet", "-c", "feature"], cwd=tmp_path, check=True)
+    (src / "changed.py").write_text("branch change\n", encoding="utf-8")
+    _commit(tmp_path, "branch change")
+    subprocess.run(["git", "push", "--quiet", "--set-upstream", "origin", "feature"], cwd=tmp_path, check=True)
+    assert subprocess.run(
+        ["git", "status", "--porcelain"], cwd=tmp_path, check=True,
+        capture_output=True, text=True,
+    ).stdout == ""
+
+    report = _scan_changed_fixture(tmp_path, [
+        MetricObservation("file", "src/changed.py", {"nloc": 10}),
+        MetricObservation("file", "src/stable.py", {"nloc": 20}),
+    ])
+
+    assert [metric.path for metric in report.files] == ["src/changed.py"]
+
+
+def test_changed_only_merges_staged_unstaged_and_untracked_paths(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    src.mkdir()
+    for name in ("committed.py", "staged.py", "unstaged.py", "untracked.py", "stable.py"):
+        (src / name).write_text("initial\n", encoding="utf-8")
+    _init_git_repo(tmp_path)
+    _commit(tmp_path, "baseline")
+    subprocess.run(["git", "switch", "--quiet", "-c", "feature"], cwd=tmp_path, check=True)
+    (src / "committed.py").write_text("branch change\n", encoding="utf-8")
+    _commit(tmp_path, "branch change")
+    (src / "staged.py").write_text("staged change\n", encoding="utf-8")
+    subprocess.run(["git", "add", str(src / "staged.py")], cwd=tmp_path, check=True)
+    (src / "unstaged.py").write_text("unstaged change\n", encoding="utf-8")
+    (src / "untracked.py").write_text("new file\n", encoding="utf-8")
+
+    report = _scan_changed_fixture(tmp_path, [
+        MetricObservation("file", f"src/{name}", {"nloc": index})
+        for index, name in enumerate(("committed.py", "staged.py", "unstaged.py", "untracked.py", "stable.py"), 1)
+    ])
+
+    assert [metric.path for metric in report.files] == [
+        "src/committed.py", "src/staged.py", "src/unstaged.py", "src/untracked.py",
+    ]
+
+
+def test_changed_only_includes_deterministic_python_dependency_closure(tmp_path: Path) -> None:
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "changed.py").write_text("from helper import value\n", encoding="utf-8")
+    (src / "helper.py").write_text("from leaf import value\n", encoding="utf-8")
+    (src / "leaf.py").write_text("value = 1\n", encoding="utf-8")
+    (src / "unrelated.py").write_text("value = 2\n", encoding="utf-8")
+    _init_git_repo(tmp_path)
+    _commit(tmp_path, "baseline")
+    subprocess.run(["git", "switch", "--quiet", "-c", "feature"], cwd=tmp_path, check=True)
+    (src / "changed.py").write_text("from helper import value\nchanged = value\n", encoding="utf-8")
+    _commit(tmp_path, "change")
+
+    report = _scan_changed_fixture(tmp_path, [
+        MetricObservation("file", f"src/{name}.py", {"nloc": index})
+        for index, name in enumerate(("changed", "helper", "leaf", "unrelated"), 1)
+    ])
+
+    assert [metric.path for metric in report.files] == [
+        "src/changed.py", "src/helper.py", "src/leaf.py",
+    ]
 
 
 def test_changed_only_falls_back_to_full_scan_without_a_usable_git_base(tmp_path: Path) -> None:
@@ -204,6 +297,41 @@ def test_changed_only_falls_back_to_full_scan_without_a_usable_git_base(tmp_path
     )
 
     assert [metric.path for metric in report.files] == ["src/one.py", "src/two.py"]
+    assert any(
+        item.kind == "scan-selection" and item.raw_value == "full-scan-fallback"
+        for item in report.evidence
+    )
+
+
+def test_only_production_files_contribute_to_default_governance_scoring(tmp_path: Path) -> None:
+    paths = [
+        "src/production.py",
+        "tests/test_production.py",
+        "generated/client.py",
+        "vendor/library.py",
+        "config/settings.toml",
+    ]
+    analyzer = FakeAnalyzer("scc", [
+        MetricObservation("file", path, {"nloc": 900, "loc": 900}) for path in paths
+    ])
+
+    report = scan_repository(
+        tmp_path,
+        config={
+            "project": {"name": "category-governance"},
+            "thresholds": {"file_nloc_review": 300, "file_nloc_high": 500},
+        },
+        analyzers=[analyzer],
+        runner=fake_runner,
+        write_reports=False,
+    )
+
+    assert {metric.path for metric in report.files} == set(paths)
+    assert {metric.category for metric in report.files} == {
+        "production", "test", "generated", "vendor", "config",
+    }
+    assert [risk.path for risk in report.risks] == ["src/production.py"]
+    assert {finding.path for finding in report.findings} == {"src/production.py"}
 
 
 def test_missing_phase_one_capabilities_are_reported_without_stopping_scan(tmp_path: Path) -> None:
@@ -371,7 +499,8 @@ def test_fixture_scan_produces_schema_valid_deterministic_categorized_report(tmp
         "vendor/dependency.py": "vendor",
         "config/settings.toml": "config",
     }
-    assert [risk.path for risk in first.risks[:2]] == ["src/calculations.py", "config/settings.toml"]
+    assert first.risks[0].path == "src/calculations.py"
+    assert {risk.path for risk in first.risks} == {"src/calculations.py", "src/stable.py"}
     assert first.risks[0].refactor_priority == 21
     assert all(metric.provenance.config_hash == "fixture-config" for metric in first.files)
     assert all(metric.provenance.parse_complete for metric in first.files)
