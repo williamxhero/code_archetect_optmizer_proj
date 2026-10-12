@@ -61,6 +61,21 @@ repository-relative and are URI-encoded. Absolute or escaping paths are rejected
 Run properties preserve commit, configuration hash, analyzer versions, unavailable
 tools, and whether any provenance is parse-incomplete.
 
+## Architecture evidence
+
+When `[architecture].enabled = true`, the scan adds Python dependency evidence
+using the `code-health-architecture` tool provenance. File `fan_in` and `fan_out`
+values are populated from uniquely resolved repository-local imports. External,
+dynamic, malformed, ambiguous, and above-root relative imports are retained as a
+bounded `architecture-status` limitation with `parse_complete: false`; the
+resolver does not infer a target from an ambiguous match. Cycle observations are
+strongly connected groups with stable sorted membership and `architecture-cycle`
+evidence. A cycle finding is emitted only when the group contains a production
+file, and architecture findings do not enter the existing risk score.
+
+The default is disabled, so reports produced without the architecture setting keep
+zero coupling metrics and the existing Phase 0+1 governance behavior.
+
 ## Compatibility rule
 
 Adding or removing public fields, changing field meaning, or changing ordering

@@ -171,8 +171,18 @@ upload. A failing upload does not remove the artifact. Workflow analyzer coverag
 warnings must be read before treating a scan as complete.
 
 AI review, Web/UI, CodeCharta/visualization, SQLite trends, SonarQube/Code Maat,
-dependency/cycle/layer checks, and TypeScript architecture fixtures remain outside
-[SPEC #1](https://github.com/williamxhero/code_archetect_optmizer_proj/issues/1).
-`[architecture]` is declarative only. Coupling, cognitive complexity, nesting, and
-cochange analysis are not implemented; reserved/default fields are not measured
-proof of their absence. See [GLOSSARY.md](GLOSSARY.md) for project terminology.
+layer policies, runtime tracing, external architecture tools, and non-Python
+architecture remain outside the current Phase 3 slice. See
+[SPEC #33](https://github.com/williamxhero/code_archetect_optmizer_proj/issues/33)
+for the bounded Python dependency scope.
+
+Set `[architecture].enabled = true` to collect deterministic local Python import
+relationships, fan-in/fan-out metrics, and strongly connected cycle groups. The
+resolver uses only unique repository-local modules and package files; external,
+dynamic, malformed, ambiguous, and above-root relative imports remain visible as
+incomplete architecture evidence. Cycle groups are represented as member lists,
+not as an invented path through alphabetically sorted files. Architecture metrics
+remain visible for every selected category, while cycle findings follow the
+existing production-only governance boundary and do not add risk scores.
+
+See [GLOSSARY.md](GLOSSARY.md) for project terminology.

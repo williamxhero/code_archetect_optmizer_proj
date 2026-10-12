@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from code_architect_optimizer.analyzers import PHASE1_ANALYZERS
+from code_architect_optimizer.architecture import analyze_python_dependencies
 from code_architect_optimizer.analyzers.base import (
     Analyzer,
     MetricObservation,
@@ -173,7 +174,6 @@ class ScanService:
             if file_metric.nloc:
                 file_metric.duplication_ratio = round(min(max(lines / file_metric.nloc, 0.0), 1.0), 6)
 
-        normalize_metrics(list(files.values()))
         for function in functions:
             function.file_path = normalize_path(function.file_path, root)
         functions = [
@@ -182,6 +182,56 @@ class ScanService:
             and not _excluded(function.file_path, scan_config)
             and _outside_changed_set(function.file_path, changed_paths)
         ]
+        architecture_cycles: list[tuple[str, ...]] = []
+        if scan_config.get("architecture", {}).get("enabled") is True:
+            architecture = analyze_python_dependencies(
+                root,
+                excluded=lambda path: _excluded(path, scan_config),
+                selected_paths=changed_paths,
+            )
+            architecture_cycles = architecture.cycles
+            architecture_provenance = Provenance(
+                source_tool="code-health-architecture",
+                tool_version="stdlib-ast",
+                scanned_at=scanned_at,
+                commit=context.commit,
+                config_hash=context.config_hash,
+                parse_complete=architecture.unresolved_imports == 0,
+            )
+            tool_versions["code-health-architecture"] = "stdlib-ast"
+            for source, targets in architecture.dependencies.items():
+                source_metric = files.setdefault(
+                    source,
+                    FileMetric(path=source, language="python", provenance=architecture_provenance),
+                )
+                source_metric.fan_out = len(targets)
+                for target in sorted(targets):
+                    target_metric = files.setdefault(
+                        target,
+                        FileMetric(path=target, language="python", provenance=architecture_provenance),
+                    )
+                    target_metric.fan_in += 1
+                    evidence.append(Evidence(
+                        kind="architecture-dependency",
+                        source_tool="code-health-architecture",
+                        tool_version="stdlib-ast",
+                        path=source,
+                        metric="imports",
+                        raw_value=target,
+                        excerpt=f"{source} imports {target}",
+                        provenance=architecture_provenance,
+                    ))
+            if architecture.unresolved_imports:
+                evidence.append(Evidence(
+                    kind="architecture-status",
+                    source_tool="code-health-architecture",
+                    tool_version="stdlib-ast",
+                    metric="unresolved_imports",
+                    raw_value=architecture.unresolved_imports,
+                    excerpt="External, dynamic, malformed, or ambiguous imports were not resolved.",
+                    provenance=architecture_provenance,
+                ))
+        normalize_metrics(list(files.values()))
         functions_by_file: dict[str, list[FunctionMetric]] = {}
         for function in functions:
             functions_by_file.setdefault(function.file_path, []).append(function)
@@ -204,6 +254,34 @@ class ScanService:
             )
             risks.append(risk)
             findings.extend(file_findings)
+        for cycle in architecture_cycles:
+            for member in cycle:
+                evidence.append(Evidence(
+                    kind="architecture-cycle",
+                    source_tool="code-health-architecture",
+                    tool_version="stdlib-ast",
+                    path=member,
+                    metric="cycle_group",
+                    raw_value=cycle[0],
+                    excerpt=f"Member of local import cycle group ({len(cycle)} files).",
+                    provenance=architecture_provenance,
+                ))
+            production_members = [path for path in cycle if files[path].category == "production"]
+            if not production_members:
+                continue
+            members = ", ".join(cycle[:8])
+            if len(cycle) > 8:
+                members += f", ... ({len(cycle) - 8} more; see architecture-cycle evidence)"
+            findings.append(Finding(
+                rule_id="architecture.import-cycle",
+                severity="medium",
+                path=production_members[0],
+                metric="cycle_size",
+                actual=len(cycle),
+                threshold=1,
+                evidence_source="code-health-architecture",
+                message="Local import cycle group: " + members,
+            ))
 
         risks = prioritize(risks)
         findings.sort(key=lambda finding: (
