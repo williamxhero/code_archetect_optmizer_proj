@@ -49,10 +49,14 @@ paths relative to the repository. Raw output stays under `.code-health/raw`.
 not a custom output directory. `explain` displays thresholds from the current
 `code-health.toml`; keep it aligned with the scan configuration.
 
-`scan --changed` currently selects staged/unstaged changes relative to `HEAD`
-plus untracked, non-ignored files. It is not a merge-base/branch diff and does not
-compute a dependency closure or reduce the external analyzers' workload. Without
-a usable Git base it falls back to a full scan.
+`scan --changed` selects the current branch delta from its usable upstream/default
+branch merge base, then merges staged, unstaged, and untracked non-ignored files.
+For Python files it follows only deterministic, uniquely-resolved repository-local
+imports (including transitive imports); ambiguous or unavailable dependencies are
+not guessed. External analyzers still run against the repository and their
+observations are filtered to the selected closure, so this selection does not yet
+reduce analyzer process workload. Without a usable Git merge base it safely falls
+back to a full scan and records that fallback in report evidence.
 
 ## Reports and the frozen schema
 

@@ -29,6 +29,7 @@ from code_architect_optimizer.normalization.paths import normalize_path
 from code_architect_optimizer.reports import write_report_artifacts
 from code_architect_optimizer.risk.prioritization import prioritize
 from code_architect_optimizer.risk.scoring import score_file
+from code_architect_optimizer.selection import select_changed
 
 Runner = Callable[[Analyzer, ScanContext, int], RawAnalyzerResult]
 
@@ -71,11 +72,37 @@ class ScanService:
             commit=_current_commit(root),
             changed_only=changed_only,
         )
-        changed_paths = _changed_paths(root) if changed_only else None
+        selection = select_changed(root) if changed_only else None
+        changed_paths = selection.paths if selection else None
         scanned_at = datetime.now(timezone.utc).isoformat()
         files: dict[str, FileMetric] = {}
         functions: list[FunctionMetric] = []
         evidence: list[Evidence] = []
+        if selection is not None:
+            selection_provenance = Provenance(
+                source_tool="code-health", scanned_at=scanned_at,
+                commit=context.commit, config_hash=context.config_hash,
+            )
+            if selection.paths is None:
+                evidence.append(Evidence(
+                    kind="scan-selection", source_tool="code-health", metric="mode",
+                    raw_value="full-scan-fallback",
+                    excerpt="Changed-only full-scan fallback: no usable default-branch merge base or Git selection failed.",
+                    provenance=selection_provenance,
+                ))
+            else:
+                evidence.append(Evidence(
+                    kind="scan-selection", source_tool="code-health", metric="merge-base",
+                    raw_value=selection.base, provenance=selection_provenance,
+                ))
+                for path in sorted(selection.paths):
+                    if not _excluded(path, scan_config):
+                        evidence.append(Evidence(
+                            kind="scan-selection", source_tool="code-health", path=path,
+                            metric="reason", raw_value="changed" if path in selection.changed else "dependency",
+                            excerpt="Static Python imports only; analyzers still run repository-wide.",
+                            provenance=selection_provenance,
+                        ))
         unavailable_tools: set[str] = set()
         tool_versions: dict[str, str] = {}
         duplicate_lines: dict[str, int] = {}
@@ -250,28 +277,6 @@ def _current_commit(repo_root: str) -> str:
     except (OSError, subprocess.SubprocessError):
         return "unknown"
     return result.stdout.strip() or "unknown"
-
-
-def _changed_paths(repo_root: str) -> set[str] | None:
-    """Return changed paths, or None when Git cannot provide a usable base."""
-    try:
-        diff = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD"], cwd=repo_root,
-            capture_output=True, text=True, timeout=30, check=True,
-        )
-        untracked = subprocess.run(
-            ["git", "ls-files", "--others", "--exclude-standard"], cwd=repo_root,
-            capture_output=True, text=True, timeout=30, check=True,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    paths = {
-        normalize_path(line.strip(), repo_root)
-        for output in (diff.stdout, untracked.stdout)
-        for line in output.splitlines()
-        if line.strip()
-    }
-    return {path for path in paths if path}
 
 
 def _excluded(path: str, config: Mapping[str, Any]) -> bool:

@@ -127,7 +127,7 @@ def init(
 
 @app.command("scan")
 def scan(
-    changed: bool = typer.Option(False, "--changed", help="Scan changed files only."),
+    changed: bool = typer.Option(False, "--changed", help="Select branch and local changes plus static Python dependencies; full scan without a usable merge base."),
     config_path: Path | None = typer.Option(
         None,
         "--config",
@@ -170,6 +170,9 @@ def scan(
 
     report_dir = report_dir or repo_root / ".code-health" / "reports"
     typer.echo(f"Scanned {len(report.files)} file(s); {len(report.findings)} finding(s).")
+    for item in report.evidence:
+        if item.kind == "scan-selection" and item.raw_value == "full-scan-fallback":
+            typer.echo(item.excerpt, err=True)
     if report.unavailable_tools:
         typer.echo(
             "Unavailable analyzers: " + ", ".join(report.unavailable_tools),
