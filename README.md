@@ -46,8 +46,10 @@ their last argument when operating outside the current directory.
 `scan --config custom.toml --output-dir artifacts` selects configuration/report
 paths relative to the repository. Raw output stays under `.code-health/raw`.
 `report`, `compare`, and `explain` read the standard `.code-health/reports` path,
-not a custom output directory. `explain` displays thresholds from the current
-`code-health.toml`; keep it aligned with the scan configuration.
+not a custom output directory. `report --format sarif` renders the saved JSON
+report as deterministic SARIF 2.1.0 for code-scanning integrations. `explain`
+displays thresholds from the current `code-health.toml`; keep it aligned with the
+scan configuration.
 
 `scan --changed` selects the current branch delta from its usable upstream/default
 branch merge base, then merges staged, unstaged, and untracked non-ignored files.
@@ -159,9 +161,18 @@ No additional lint/type-check workflow is currently configured. Review artifacts
 and package contents before handoff; see [acceptance results](docs/acceptance.md).
 
 The MVP does not implement `ai-review` or `history`; `--help` marks them as deferred.
-AI review, Web/UI, CodeCharta/visualization, SARIF/GitHub Actions, SQLite trends,
-SonarQube/Code Maat, dependency/cycle/layer checks, and TypeScript architecture
-fixtures remain outside [SPEC #1](https://github.com/williamxhero/code_archetect_optmizer_proj/issues/1).
+SARIF and GitHub Actions delivery are implemented in
+[SPEC #28](https://github.com/williamxhero/code_archetect_optmizer_proj/issues/28).
+The workflow emits a downloadable SARIF artifact. Set the repository Actions
+variable `CODE_HEALTH_UPLOAD_SARIF=true` to enable code-scanning upload after
+confirming code scanning is available; private repositories need GitHub Code
+Security enabled. Fork pull requests retain the artifact but skip code-scanning
+upload. A failing upload does not remove the artifact. Workflow analyzer coverage
+warnings must be read before treating a scan as complete.
+
+AI review, Web/UI, CodeCharta/visualization, SQLite trends, SonarQube/Code Maat,
+dependency/cycle/layer checks, and TypeScript architecture fixtures remain outside
+[SPEC #1](https://github.com/williamxhero/code_archetect_optmizer_proj/issues/1).
 `[architecture]` is declarative only. Coupling, cognitive complexity, nesting, and
 cochange analysis are not implemented; reserved/default fields are not measured
 proof of their absence. See [GLOSSARY.md](GLOSSARY.md) for project terminology.
