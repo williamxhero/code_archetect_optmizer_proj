@@ -26,16 +26,20 @@ code-health explain src/example.py       # replace with a path in the report
 ```
 
 Python 3.12+ is required. For a non-development installation use
-`python -m pip install .`. Activate your virtual environment (or add its scripts
+`python -m pip install .`. The package is released under the MIT License; see
+[`LICENSE`](LICENSE). Activate your virtual environment (or add its scripts
 folder to `PATH`) so `code-health` resolves to the same Python installation.
 
 Install optional analyzers separately: `scc` on `PATH`,
 `python -m pip install lizard` in the orchestrator's Python environment, and
 `npm install -g jscpd` with Node.js and its executable on `PATH`. Native Git
-history needs Git on `PATH`. These tools are not required Python dependencies;
+history needs Git on `PATH`. These tools are external, independently updateable
+prerequisites, not copied package contents or required Python dependencies;
 without them scanning degrades with explicit diagnostics. Pin analyzer versions
-when comparing results over time. Current adapter limitations are documented in
-the [acceptance handoff](docs/acceptance.md).
+when comparing results over time. The ownership matrix, compatibility baseline,
+workaround policy, and provenance obligations are documented in
+[`docs/public-boundary.md`](docs/public-boundary.md); observed real-checkout
+limitations are documented in the [acceptance handoff](docs/acceptance.md).
 
 `init` creates `code-health.toml` and `.code-health/raw` and
 `.code-health/reports`. It refuses to overwrite an existing configuration; use
@@ -145,7 +149,8 @@ and known credential environment values, but redaction is not a complete secret
 scanner: inspect artifacts before sharing them. Keep `.code-health/`, caches,
 build outputs, and local environment files out of version control. The supplied
 `.gitignore` protects this checkout; add equivalent exclusions to repositories
-where you run `init` (it does not edit their ignore files).
+where you run `init` (it does not edit their ignore files). CAO's public evidence
+is bounded and report-safe; raw analyzer output is never a public evidence field.
 
 ## Verification and scope
 
