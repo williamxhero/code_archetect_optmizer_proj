@@ -19,7 +19,10 @@ DEFAULTS: dict[str, Any] = {
         "cyclomatic_complexity_review": 10,
         "duplication_ratio_review": 0.10,
     },
-    "architecture": {"enabled": False},
+    "architecture": {
+        "enabled": False,
+        "boundaries": {"enabled": False, "layers": {}, "allowed": {}},
+    },
     "ci": {"mode": "report", "fail_on": ["critical", "high"]},
 }
 

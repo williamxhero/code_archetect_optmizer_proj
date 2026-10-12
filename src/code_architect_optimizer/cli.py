@@ -53,6 +53,29 @@ def _validate_config(config: dict[str, Any]) -> None:
     fail_on = config["ci"].get("fail_on")
     if not isinstance(fail_on, list) or any(item not in {"critical", "high", "medium", "low", "info"} for item in fail_on):
         raise ValueError("ci.fail_on must be an array of severities")
+    architecture = config["architecture"]
+    if type(architecture.get("enabled")) is not bool:
+        raise ValueError("architecture.enabled must be a boolean")
+    boundaries = architecture.get("boundaries", {})
+    if not isinstance(boundaries, dict):
+        raise ValueError("architecture.boundaries must be a TOML table")
+    if type(boundaries.get("enabled")) is not bool:
+        raise ValueError("architecture.boundaries.enabled must be a boolean")
+    groups = boundaries.get("layers", boundaries.get("groups", {}))
+    if not isinstance(groups, dict) or any(
+        not isinstance(name, str) or not name or not isinstance(patterns, list)
+        or not patterns or any(not isinstance(pattern, str) or not pattern for pattern in patterns)
+        for name, patterns in groups.items()
+    ):
+        raise ValueError("architecture.boundaries.layers must map names to non-empty string arrays")
+    allowed = boundaries.get("allowed", {})
+    if not isinstance(allowed, dict) or any(
+        not isinstance(source, str) or source not in groups
+        or not isinstance(targets, list)
+        or any(not isinstance(name, str) or name not in groups for name in targets)
+        for source, targets in allowed.items()
+    ):
+        raise ValueError("architecture.boundaries.allowed must map known layers to string arrays")
 
 
 def _selected_path(repo_root: Path, selected: Path | None, default: str) -> Path:

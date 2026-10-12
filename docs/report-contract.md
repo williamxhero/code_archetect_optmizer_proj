@@ -73,6 +73,16 @@ strongly connected groups with stable sorted membership and `architecture-cycle`
 evidence. A cycle finding is emitted only when the group contains a production
 file, and architecture findings do not enter the existing risk score.
 
+When `[architecture.boundaries].enabled = true`, layer patterns are read from
+`[architecture.boundaries.layers]` and allowed cross-layer directions from
+`[architecture.boundaries.allowed]`. Same-layer edges are allowed. Resolved local
+edges produce bounded `architecture-boundary` evidence with layer and decision
+context; forbidden production-source edges produce the
+`architecture.boundary-forbidden` finding. Unclassified or multiply matched
+paths produce policy-coverage evidence with `parse_complete: false` and are not
+guessed into a layer. Invalid policy declarations fail configuration validation;
+external and unresolved imports remain limitations rather than boundary findings.
+
 The default is disabled, so reports produced without the architecture setting keep
 zero coupling metrics and the existing Phase 0+1 governance behavior.
 

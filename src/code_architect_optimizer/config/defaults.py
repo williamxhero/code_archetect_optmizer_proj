@@ -25,6 +25,13 @@ duplication_ratio_review = 0.10
 [architecture]
 enabled = false
 
+[architecture.boundaries]
+enabled = false
+
+[architecture.boundaries.layers]
+
+[architecture.boundaries.allowed]
+
 [ci]
 mode = "report"
 fail_on = ["critical", "high"]

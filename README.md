@@ -171,9 +171,9 @@ upload. A failing upload does not remove the artifact. Workflow analyzer coverag
 warnings must be read before treating a scan as complete.
 
 AI review, Web/UI, CodeCharta/visualization, SQLite trends, SonarQube/Code Maat,
-layer policies, runtime tracing, external architecture tools, and non-Python
-architecture remain outside the current Phase 3 slice. See
-[SPEC #33](https://github.com/williamxhero/code_archetect_optmizer_proj/issues/33)
+runtime tracing, external architecture tools, and non-Python architecture remain
+outside the current Phase 3 slices. See [SPEC #33](https://github.com/williamxhero/code_archetect_optmizer_proj/issues/33)
+and [SPEC #35](https://github.com/williamxhero/code_archetect_optmizer_proj/issues/35)
 for the bounded Python dependency scope.
 
 Set `[architecture].enabled = true` to collect deterministic local Python import
@@ -184,5 +184,13 @@ incomplete architecture evidence. Cycle groups are represented as member lists,
 not as an invented path through alphabetically sorted files. Architecture metrics
 remain visible for every selected category, while cycle findings follow the
 existing production-only governance boundary and do not add risk scores.
+
+To evaluate explicit module boundaries, enable `[architecture.boundaries]` and
+declare repository-relative layer globs under `[architecture.boundaries.layers]`.
+Declare allowed cross-layer directions under `[architecture.boundaries.allowed]`;
+same-layer imports are allowed by default. Ambiguous or unclassified matches are
+reported as incomplete policy coverage rather than guessed into a layer. Boundary
+findings use the existing production governance and report schema; no external
+architecture tool is installed or invoked.
 
 See [GLOSSARY.md](GLOSSARY.md) for project terminology.

@@ -168,3 +168,95 @@ def test_self_import_and_deep_graph_do_not_crash_cycle_detection(tmp_path: Path)
     assert len(result.cycles) == 2
     assert ("self_import.py",) in result.cycles
     assert len(next(cycle for cycle in result.cycles if len(cycle) > 1)) == 1050
+
+
+def _boundary_config() -> dict:
+    return {
+        "project": {"name": "boundary"},
+        "architecture": {
+            "enabled": True,
+            "boundaries": {
+                "enabled": True,
+                "layers": {
+                    "api": ["api/**"],
+                    "domain": ["domain/**"],
+                    "internal": ["internal/**"],
+                },
+                "allowed": {"api": ["domain"], "internal": ["domain"]},
+            },
+        },
+    }
+
+
+def test_boundary_policy_emits_allowed_and_forbidden_evidence_without_new_schema_fields(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "api").mkdir()
+    (tmp_path / "domain").mkdir()
+    (tmp_path / "internal").mkdir()
+    (tmp_path / "api/entry.py").write_text(
+        "from domain import model\nfrom internal import helper\nimport external\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "domain/model.py").write_text("value = 1\n", encoding="utf-8")
+    (tmp_path / "internal/helper.py").write_text("value = 2\n", encoding="utf-8")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests/entry.py").write_text("from internal import helper\n", encoding="utf-8")
+    (tmp_path / "misc").mkdir()
+    (tmp_path / "misc/entry.py").write_text("from domain import model\n", encoding="utf-8")
+
+    first = scan_repository(
+        tmp_path, config=_boundary_config(), analyzers=[FakeAnalyzer("empty")], runner=fake_runner,
+    )
+    second = scan_repository(
+        tmp_path, config=_boundary_config(), analyzers=[FakeAnalyzer("empty")], runner=fake_runner,
+    )
+    assert render_json(first) == render_json(second)
+    assert render_markdown(first) == render_markdown(second)
+    assert render_sarif(first) == render_sarif(second)
+    assert [item.rule_id for item in first.findings] == ["architecture.boundary-forbidden"]
+    assert first.findings[0].path == "api/entry.py"
+    assert "internal/helper.py" in first.findings[0].message
+    decisions = {
+        (item.path, item.raw_value)
+        for item in first.evidence
+        if item.kind == "architecture-boundary" and item.metric == "decision"
+    }
+    assert ("api/entry.py", "allowed") in decisions
+    assert ("api/entry.py", "forbidden") in decisions
+    assert ("tests/entry.py", "unclassified") in decisions
+    assert ("misc/entry.py", "unclassified") in decisions
+    assert all(metric.risk_score == 0 for metric in first.risks)
+    data = json.loads(render_json(first))
+    assert data["schema_version"] == 1
+    sarif = json.loads(render_sarif(first))
+    assert sarif["runs"][0]["results"][0]["ruleId"] == "architecture.boundary-forbidden"
+    assert sarif["runs"][0]["properties"]["parse_incomplete"] is True
+
+
+def test_boundary_policy_rejects_invalid_configuration_and_reports_ambiguous_coverage(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "api").mkdir()
+    (tmp_path / "domain").mkdir()
+    (tmp_path / "api/entry.py").write_text("from domain import model\n", encoding="utf-8")
+    (tmp_path / "domain/model.py").write_text("value = 1\n", encoding="utf-8")
+    ambiguous = _boundary_config()
+    ambiguous["architecture"]["boundaries"]["layers"]["public"] = ["api/**"]
+    report = scan_repository(
+        tmp_path, config=ambiguous, analyzers=[FakeAnalyzer("empty")], runner=fake_runner,
+    )
+    assert report.findings == []
+    status = [item for item in report.evidence if item.kind == "architecture-boundary-status"]
+    assert status and status[0].provenance.parse_complete is False
+
+    invalid = _boundary_config()
+    invalid["architecture"]["boundaries"]["allowed"] = {"api": ["missing"]}
+    invalid_report = scan_repository(
+        tmp_path, config=invalid, analyzers=[FakeAnalyzer("empty")], runner=fake_runner,
+    )
+    invalid_status = [
+        item for item in invalid_report.evidence
+        if item.kind == "architecture-boundary-status" and item.raw_value == "invalid"
+    ]
+    assert invalid_status and invalid_status[0].provenance.parse_complete is False

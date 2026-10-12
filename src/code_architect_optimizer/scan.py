@@ -14,6 +14,7 @@ from typing import Any
 
 from code_architect_optimizer.analyzers import PHASE1_ANALYZERS
 from code_architect_optimizer.architecture import analyze_python_dependencies
+from code_architect_optimizer.architecture_policy import BoundaryPolicy, BoundaryPolicyError, parse_boundary_policy
 from code_architect_optimizer.analyzers.base import (
     Analyzer,
     MetricObservation,
@@ -76,6 +77,18 @@ class ScanService:
         loaded_config, loaded_hash = load_config(root, config_path)
         scan_config = dict(config) if config is not None else loaded_config
         digest = config_hash or (loaded_hash if config is None else _config_digest(scan_config))
+        architecture_config = scan_config.get("architecture", {})
+        if not isinstance(architecture_config, Mapping):
+            raise BoundaryPolicyError("[architecture] must be a TOML table")
+        boundary_policy_error: str | None = None
+        try:
+            boundary_policy = parse_boundary_policy(
+                architecture_config,
+                enabled=architecture_config.get("enabled") is True,
+            )
+        except BoundaryPolicyError as exc:
+            boundary_policy = None
+            boundary_policy_error = str(exc)
         context = ScanContext(
             repo_root=root,
             config_path=config_path,
@@ -183,7 +196,9 @@ class ScanService:
             and _outside_changed_set(function.file_path, changed_paths)
         ]
         architecture_cycles: list[tuple[str, ...]] = []
-        if scan_config.get("architecture", {}).get("enabled") is True:
+        architecture_provenance: Provenance | None = None
+        boundary_decisions: list[tuple[str, str, tuple[str, ...], tuple[str, ...], bool]] = []
+        if architecture_config.get("enabled") is True:
             architecture = analyze_python_dependencies(
                 root,
                 excluded=lambda path: _excluded(path, scan_config),
@@ -199,6 +214,16 @@ class ScanService:
                 parse_complete=architecture.unresolved_imports == 0,
             )
             tool_versions["code-health-architecture"] = "stdlib-ast"
+            if boundary_policy_error is not None:
+                evidence.append(Evidence(
+                    kind="architecture-boundary-status",
+                    source_tool="code-health-architecture",
+                    tool_version="stdlib-ast",
+                    metric="policy",
+                    raw_value="invalid",
+                    excerpt=boundary_policy_error[:500],
+                    provenance=architecture_provenance.model_copy(update={"parse_complete": False}),
+                ))
             for source, targets in architecture.dependencies.items():
                 source_metric = files.setdefault(
                     source,
@@ -221,6 +246,13 @@ class ScanService:
                         excerpt=f"{source} imports {target}",
                         provenance=architecture_provenance,
                     ))
+            if boundary_policy is not None:
+                boundary_decisions = _add_boundary_policy_evidence(
+                    boundary_policy,
+                    architecture.dependencies,
+                    evidence,
+                    architecture_provenance,
+                )
             if architecture.unresolved_imports:
                 evidence.append(Evidence(
                     kind="architecture-status",
@@ -254,6 +286,28 @@ class ScanService:
             )
             risks.append(risk)
             findings.extend(file_findings)
+        for source, target, source_layers, target_layers, permitted in boundary_decisions:
+            if permitted and len(source_layers) == len(target_layers) == 1:
+                continue
+            if not source_layers or not target_layers or len(source_layers) > 1 or len(target_layers) > 1:
+                continue
+            if source not in files or files[source].category != "production":
+                continue
+            source_layer = source_layers[0]
+            target_layer = target_layers[0]
+            findings.append(Finding(
+                rule_id="architecture.boundary-forbidden",
+                severity="medium",
+                path=source,
+                metric="dependency_boundary",
+                actual=1,
+                threshold=0,
+                evidence_source="code-health-architecture",
+                message=(
+                    f"Forbidden local dependency: {source} ({source_layer}) imports "
+                    f"{target} ({target_layer})."
+                ),
+            ))
         for cycle in architecture_cycles:
             for member in cycle:
                 evidence.append(Evidence(
@@ -386,6 +440,106 @@ def _excluded(path: str, config: Mapping[str, Any]) -> bool:
 
 def _outside_changed_set(path: str, changed_paths: set[str] | None) -> bool:
     return changed_paths is None or path in changed_paths
+
+
+def _add_boundary_policy_evidence(
+    policy: BoundaryPolicy,
+    dependencies: Mapping[str, set[str]],
+    evidence: list[Evidence],
+    provenance: Provenance,
+) -> list[tuple[str, str, tuple[str, ...], tuple[str, ...], bool]]:
+    """Record layer coverage and direct-edge policy decisions deterministically."""
+    decisions: list[tuple[str, str, tuple[str, ...], tuple[str, ...], bool]] = []
+    paths = sorted(set(dependencies) | {target for targets in dependencies.values() for target in targets})
+    ambiguous_paths: set[str] = set()
+    unclassified_paths: set[str] = set()
+    for path in paths:
+        matches = policy.matches(path)
+        if len(matches) > 1:
+            ambiguous_paths.add(path)
+        elif not matches:
+            unclassified_paths.add(path)
+        if len(matches) == 1:
+            classification = matches[0]
+        elif not matches:
+            classification = "unclassified"
+        else:
+            classification = "ambiguous"
+        item_provenance = provenance if len(matches) == 1 else provenance.model_copy(update={"parse_complete": False})
+        evidence.append(Evidence(
+            kind="architecture-boundary",
+            source_tool=provenance.source_tool,
+            tool_version=provenance.tool_version,
+            path=path,
+            metric="layer",
+            raw_value=classification,
+            excerpt=(
+                f"{path} matches layer {matches[0]}." if len(matches) == 1 else
+                f"{path} matches no declared layer." if not matches else
+                f"{path} matches multiple declared layers: {', '.join(matches)}."
+            ),
+            provenance=item_provenance,
+        ))
+
+    for source in sorted(dependencies):
+        source_layers = policy.matches(source)
+        for target in sorted(dependencies[source]):
+            target_layers = policy.matches(target)
+            permitted = (
+                len(source_layers) == 1 and len(target_layers) == 1 and
+                (source_layers[0] == target_layers[0] or policy.permits(source_layers[0], target_layers[0]))
+            )
+            decision = (
+                "allowed" if permitted else
+                "unclassified" if not source_layers or not target_layers else
+                "ambiguous" if len(source_layers) > 1 or len(target_layers) > 1 else
+                "forbidden"
+            )
+            decisions.append((source, target, source_layers, target_layers, permitted))
+            source_text = ", ".join(source_layers) or "unclassified"
+            target_text = ", ".join(target_layers) or "unclassified"
+            decision_provenance = (
+                provenance if decision in {"allowed", "forbidden"}
+                else provenance.model_copy(update={"parse_complete": False})
+            )
+            evidence.append(Evidence(
+                kind="architecture-boundary",
+                source_tool=provenance.source_tool,
+                tool_version=provenance.tool_version,
+                path=source,
+                metric="decision",
+                raw_value=decision,
+                excerpt=f"{source} ({source_text}) imports {target} ({target_text}): {decision}.",
+                provenance=decision_provenance,
+            ))
+
+    if ambiguous_paths or unclassified_paths:
+        details = []
+        if ambiguous_paths:
+            details.append(f"ambiguous paths: {', '.join(sorted(ambiguous_paths))}")
+        if unclassified_paths:
+            details.append(f"unclassified paths: {', '.join(sorted(unclassified_paths))}")
+        evidence.append(Evidence(
+            kind="architecture-boundary-status",
+            source_tool=provenance.source_tool,
+            tool_version=provenance.tool_version,
+            metric="policy_coverage",
+            raw_value=len(ambiguous_paths) + len(unclassified_paths),
+            excerpt="; ".join(details),
+            provenance=provenance.model_copy(update={"parse_complete": False}),
+        ))
+
+    if not paths:
+        evidence.append(Evidence(
+            kind="architecture-boundary-status",
+            source_tool=provenance.source_tool,
+            tool_version=provenance.tool_version,
+            metric="policy",
+            raw_value="configured-empty" if not policy.layers else "configured",
+            excerpt=f"Boundary policy configured with hash {policy.config_hash} but no selected local dependency edges.",
+            provenance=provenance,
+        ))
+    return decisions
 
 
 def _provenance_for_observation(provenance: Provenance, data: Mapping[str, Any]) -> Provenance:
