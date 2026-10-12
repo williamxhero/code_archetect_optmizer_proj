@@ -39,7 +39,7 @@ def production_findings(report: ReportDocument) -> list[Finding]:
     categories = {metric.path: metric.category for metric in report.files}
     return [
         finding for finding in report.findings
-        if categories.get(finding.path, "production") in {"production", "unknown"}
+        if categories.get(finding.path, "production") == "production"
     ]
 
 

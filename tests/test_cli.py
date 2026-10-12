@@ -274,7 +274,7 @@ def test_scan_ci_modes_apply_baseline_gate(
     report = ReportDocument(
         repository="cli-project",
         commit="after",
-        files=[FileMetric(path="src/example.py")],
+        files=[FileMetric(path="src/example.py", category="production")],
         findings=[_baseline_finding("src/example.py", 11)],
     )
 
