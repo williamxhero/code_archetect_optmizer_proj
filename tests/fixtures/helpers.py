@@ -11,6 +11,7 @@ from typing import Final
 FIXTURE_ROOT: Final = Path(__file__).parent
 PROJECT_FIXTURE_ROOT: Final = FIXTURE_ROOT / "project"
 GIT_HISTORY_FIXTURE_ROOT: Final = FIXTURE_ROOT / "git_history"
+TYPESCRIPT_FIXTURE_ROOT: Final = FIXTURE_ROOT / "typescript"
 EXPECTED_FIXTURE_DATA: Final = FIXTURE_ROOT / "expected.json"
 
 
@@ -22,6 +23,13 @@ def materialize_project_fixture(destination: Path) -> Path:
     """Copy the analyzer project fixture to a new temporary directory."""
     destination = Path(destination)
     shutil.copytree(PROJECT_FIXTURE_ROOT, destination)
+    return destination
+
+
+def materialize_typescript_fixture(destination: Path) -> Path:
+    """Copy the deterministic TypeScript analyzer fixture to a new directory."""
+    destination = Path(destination)
+    shutil.copytree(TYPESCRIPT_FIXTURE_ROOT, destination)
     return destination
 
 

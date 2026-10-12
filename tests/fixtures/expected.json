@@ -19,6 +19,26 @@
       "minimum_matching_body_lines": 5
     }
   },
+  "typescript": {
+    "files": {
+      "src/calculations.ts": {"category": "production", "language": "typescript"},
+      "src/stable value.ts": {"category": "production", "language": "typescript"},
+      "tests/calculations.test.ts": {"category": "test", "language": "typescript"},
+      "generated/client.ts": {"category": "generated", "language": "typescript"},
+      "vendor/dependency.ts": {"category": "vendor", "language": "typescript"},
+      "config/settings.json": {"category": "config", "language": "unknown"}
+    },
+    "complex_function": {
+      "path": "src/calculations.ts",
+      "qualified_name": "complexDecision",
+      "minimum_cyclomatic_complexity": 13
+    },
+    "duplicate_functions": {
+      "path": "src/calculations.ts",
+      "qualified_names": ["normalizeValues", "normalizeValuesCopy"],
+      "minimum_matching_body_lines": 8
+    }
+  },
   "git_history": {
     "commits": [
       {"author": "Alice Example", "paths": ["README.md", "src/metrics.py"]},
