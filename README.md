@@ -87,8 +87,9 @@ threshold: file review/high NLOC 300/500, function NLOC 50, cyclomatic complexit
 10, and duplication ratio 0.10. The 300-line threshold is a review signal, not a
 mandatory split point or an industry standard. Classification distinguishes
 production, test, generated, vendor, config, and unknown files. Configured
-exclusions omit files; classification alone does not currently exempt test or
-generated files from scoring.
+exclusions omit files; default governance scoring, findings, risks, and CI gates
+use production files only while all categories remain visible in metrics,
+classification, and evidence.
 
 Risk output separates structural `risk_score`, Git-derived `change_pressure`,
 and `refactor_priority`. Priority uses risk × max(change pressure, 0.5) × business

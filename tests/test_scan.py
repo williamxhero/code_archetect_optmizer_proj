@@ -269,6 +269,37 @@ def test_changed_only_falls_back_to_full_scan_without_a_usable_git_base(tmp_path
     )
 
 
+def test_only_production_files_contribute_to_default_governance_scoring(tmp_path: Path) -> None:
+    paths = [
+        "src/production.py",
+        "tests/test_production.py",
+        "generated/client.py",
+        "vendor/library.py",
+        "config/settings.toml",
+    ]
+    analyzer = FakeAnalyzer("scc", [
+        MetricObservation("file", path, {"nloc": 900, "loc": 900}) for path in paths
+    ])
+
+    report = scan_repository(
+        tmp_path,
+        config={
+            "project": {"name": "category-governance"},
+            "thresholds": {"file_nloc_review": 300, "file_nloc_high": 500},
+        },
+        analyzers=[analyzer],
+        runner=fake_runner,
+        write_reports=False,
+    )
+
+    assert {metric.path for metric in report.files} == set(paths)
+    assert {metric.category for metric in report.files} == {
+        "production", "test", "generated", "vendor", "config",
+    }
+    assert [risk.path for risk in report.risks] == ["src/production.py"]
+    assert {finding.path for finding in report.findings} == {"src/production.py"}
+
+
 def test_missing_phase_one_capabilities_are_reported_without_stopping_scan(tmp_path: Path) -> None:
     names = ["scc", "lizard", "jscpd", "git-history"]
     analyzers = [FakeAnalyzer(name, available=False) for name in names]
@@ -434,7 +465,8 @@ def test_fixture_scan_produces_schema_valid_deterministic_categorized_report(tmp
         "vendor/dependency.py": "vendor",
         "config/settings.toml": "config",
     }
-    assert [risk.path for risk in first.risks[:2]] == ["src/calculations.py", "config/settings.toml"]
+    assert first.risks[0].path == "src/calculations.py"
+    assert {risk.path for risk in first.risks} == {"src/calculations.py", "src/stable.py"}
     assert first.risks[0].refactor_priority == 21
     assert all(metric.provenance.config_hash == "fixture-config" for metric in first.files)
     assert all(metric.provenance.parse_complete for metric in first.files)

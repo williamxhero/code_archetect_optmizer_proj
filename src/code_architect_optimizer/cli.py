@@ -17,7 +17,7 @@ from code_architect_optimizer.baseline.store import (
 from code_architect_optimizer.config.defaults import DEFAULT_TOML
 from code_architect_optimizer.config.loader import DEFAULTS, load_config
 from code_architect_optimizer.reports import read_json_report, render_json, render_markdown
-from code_architect_optimizer.scan import scan_repository
+from code_architect_optimizer.scan import production_findings, scan_repository
 
 app = typer.Typer(
     help=(
@@ -191,9 +191,9 @@ def scan(
             loaded_baseline = load_baseline_checked(str(baseline_file))
         except BaselineError as exc:
             _error(f"could not load baseline at {baseline_file}: {exc}")
-        comparison = compare_baseline(report.findings, loaded_baseline)
+        comparison = compare_baseline(production_findings(report), loaded_baseline)
 
-    passed, reason = gate(mode, comparison, fail_on, report.findings)
+    passed, reason = gate(mode, comparison, fail_on, production_findings(report))
     typer.echo(f"CI gate: {reason}")
     if not passed:
         raise typer.Exit(code=1)
@@ -202,7 +202,7 @@ def scan(
             safe_report = read_json_report(report_dir / "report.json")
             save_baseline_file(
                 str(baseline_file), safe_report.repository, safe_report.commit,
-                _baseline_rules(config), safe_report.findings,
+                _baseline_rules(config), production_findings(safe_report),
             )
         except (OSError, ValueError) as exc:
             _error(f"could not write baseline at {baseline_file}: {exc}")
@@ -243,7 +243,7 @@ def compare(
     else:
         _error(f"could not load baseline at {baseline_file}: baseline does not exist")
 
-    comparison = compare_baseline(report_document.findings, baseline_document)
+    comparison = compare_baseline(production_findings(report_document), baseline_document)
     _print_comparison(comparison)
     if update_baseline:
         try:

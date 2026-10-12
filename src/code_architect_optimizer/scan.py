@@ -33,6 +33,16 @@ from code_architect_optimizer.selection import select_changed
 
 Runner = Callable[[Analyzer, ScanContext, int], RawAnalyzerResult]
 
+
+def production_findings(report: ReportDocument) -> list[Finding]:
+    """Return findings eligible for default production governance decisions."""
+    categories = {metric.path: metric.category for metric in report.files}
+    return [
+        finding for finding in report.findings
+        if categories.get(finding.path, "production") in {"production", "unknown"}
+    ]
+
+
 _SEVERITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
 
 
@@ -185,6 +195,8 @@ class ScanService:
         risks: list[RiskScore] = []
         findings: list[Finding] = []
         for file_metric in files.values():
+            if file_metric.category != "production":
+                continue
             risk, file_findings = score_file(
                 file_metric,
                 functions_by_file.get(file_metric.path, []),
@@ -425,4 +437,4 @@ def _float(value: Any, default: float = 0.0) -> float:
         return default
 
 
-__all__ = ["ScanService", "scan_repository"]
+__all__ = ["ScanService", "production_findings", "scan_repository"]
