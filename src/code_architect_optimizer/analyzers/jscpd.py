@@ -24,9 +24,13 @@ class JscpdAnalyzer:
     def tool_version(self) -> str:
         try:
             p = subprocess.run(["jscpd", "--version"], capture_output=True, text=True, timeout=30)
-            return (p.stdout or p.stderr or "").strip().splitlines()[0][:80]
+            for output in (p.stdout, p.stderr):
+                for line in (output or "").splitlines():
+                    if line.strip():
+                        return line.strip()[:80]
         except Exception:  # noqa: BLE001
-            return "unknown"
+            pass
+        return "unknown"
 
     def build_command(self, context: ScanContext) -> list[str]:
         out = os.path.join(context.repo_root, context.work_dir, "raw", "jscpd.json")
