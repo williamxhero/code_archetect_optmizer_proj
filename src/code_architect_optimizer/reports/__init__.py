@@ -23,6 +23,8 @@ from .markdown import (
     write_markdown_report,
 )
 
+from .sarif import render_sarif
+
 DEFAULT_REPORT_DIRECTORY = ".code-health/reports"
 
 
@@ -55,6 +57,7 @@ __all__ = [
     "render_json_report",
     "render_markdown",
     "render_markdown_report",
+    "render_sarif",
     "write_json",
     "write_json_report",
     "write_markdown",

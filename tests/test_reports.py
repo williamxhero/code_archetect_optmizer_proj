@@ -9,6 +9,7 @@ from code_architect_optimizer.reports import (
     read_json_report,
     render_json,
     render_markdown,
+    render_sarif,
     write_report_artifacts,
 )
 
@@ -86,6 +87,7 @@ def test_rendering_is_invariant_to_input_order_and_timestamps() -> None:
     second.files[0].provenance.scanned_at = "later"
     assert render_json(first) == render_json(second)
     assert render_markdown(first) == render_markdown(second)
+    assert render_sarif(first) == render_sarif(second)
 
 
 def test_markdown_orders_high_priority_items_first() -> None:
@@ -111,7 +113,7 @@ def test_renderers_redact_secrets_and_raw_analyzer_output(monkeypatch) -> None:
 
     rendered_json = render_json(report)
     rendered_markdown = render_markdown(report)
-    for rendered in (rendered_json, rendered_markdown):
+    for rendered in (rendered_json, rendered_markdown, render_sarif(report)):
         assert "hunter2" not in rendered
         assert "env-token-value" not in rendered
         assert "bearer-value" not in rendered

@@ -16,7 +16,7 @@ from code_architect_optimizer.baseline.store import (
 )
 from code_architect_optimizer.config.defaults import DEFAULT_TOML
 from code_architect_optimizer.config.loader import DEFAULTS, load_config
-from code_architect_optimizer.reports import read_json_report, render_json, render_markdown
+from code_architect_optimizer.reports import read_json_report, render_json, render_markdown, render_sarif
 from code_architect_optimizer.scan import production_findings, scan_repository
 
 app = typer.Typer(
@@ -260,21 +260,21 @@ def compare(
 
 @app.command("report")
 def report(
-    format: str = typer.Option("markdown", "--format", help="Report format: json or markdown."),
+    format: str = typer.Option("markdown", "--format", help="Report format: json, markdown or sarif."),
     repo_root: Path = typer.Argument(Path("."), exists=True, file_okay=False, resolve_path=True),
 ) -> None:
-    """Print the saved JSON or Markdown scan report."""
-    if format not in {"json", "markdown"}:
-        _error("--format must be 'json' or 'markdown'")
+    """Print the saved scan report as JSON, Markdown or SARIF."""
+    if format not in {"json", "markdown", "sarif"}:
+        _error("--format must be 'json' or 'markdown' or 'sarif'")
 
     report_dir = repo_root / ".code-health" / "reports"
-    artifact = report_dir / ("report.json" if format == "json" else "report.md")
+    artifact = report_dir / ("report.md" if format == "markdown" else "report.json")
     if not artifact.is_file():
         _error(f"no {format} report found at {artifact}; run 'code-health scan' first")
 
     try:
         document = read_json_report(report_dir / "report.json")
-        output = render_json(document) if format == "json" else render_markdown(document)
+        output = {"json": render_json, "markdown": render_markdown, "sarif": render_sarif}[format](document)
     except (OSError, ValueError) as exc:
         _error(f"could not read report at {report_dir}: {exc}")
     typer.echo(output, nl=False)

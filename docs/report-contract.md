@@ -49,6 +49,18 @@ An unavailable or malformed analyzer contributes status evidence with
 `parse_complete: false`, allowing consumers to distinguish missing evidence from
 an observed zero value.
 
+## SARIF export
+
+`code-health report --format sarif` reads the saved schema-version-1 report and
+emits SARIF 2.1.0. It does not rerun analyzers or change the input JSON schema.
+Rule IDs are sorted, results retain deterministic finding order, and the export
+uses the same redaction as JSON/Markdown. Critical/high map to `error`, medium to
+`warning`, and low/info to `note`. File-level line zero is displayed at line 1;
+`original_line` preserves the input value in result properties. Paths must be
+repository-relative and are URI-encoded. Absolute or escaping paths are rejected.
+Run properties preserve commit, configuration hash, analyzer versions, unavailable
+tools, and whether any provenance is parse-incomplete.
+
 ## Compatibility rule
 
 Adding or removing public fields, changing field meaning, or changing ordering
