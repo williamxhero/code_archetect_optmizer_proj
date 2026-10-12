@@ -108,6 +108,23 @@ def test_scan_merges_observations_scores_risks_and_writes_public_artifacts(tmp_p
     assert (tmp_path / ".code-health" / "reports" / "report.md").is_file()
 
 
+def test_scan_excludes_code_health_artifacts_from_analyzer_observations(tmp_path: Path) -> None:
+    analyzer = FakeAnalyzer("jscpd", [
+        MetricObservation("file", ".code-health/raw/jscpd.out", {"nloc": 8}),
+        MetricObservation("file", "src/app.py", {"nloc": 8}),
+    ])
+
+    report = scan_repository(
+        tmp_path,
+        config={"project": {"name": "work-dir-exclusion"}},
+        analyzers=[analyzer],
+        runner=fake_runner,
+        write_reports=False,
+    )
+
+    assert [metric.path for metric in report.files] == ["src/app.py"]
+
+
 def test_changed_only_scans_diff_paths_and_keeps_commit_provenance(tmp_path: Path) -> None:
     (tmp_path / "src").mkdir()
     changed = tmp_path / "src" / "changed.py"

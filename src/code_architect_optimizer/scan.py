@@ -275,7 +275,9 @@ def _changed_paths(repo_root: str) -> set[str] | None:
 
 
 def _excluded(path: str, config: Mapping[str, Any]) -> bool:
-    if path == ".code-health" or path.startswith(".code-health/"):
+    if path in {".code-health", "code-health"} or path.startswith((
+        ".code-health/", "code-health/",
+    )):
         return True
     excludes = config.get("scan", {}).get("exclude", [])
     for pattern in excludes:

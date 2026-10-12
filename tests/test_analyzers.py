@@ -88,3 +88,53 @@ def test_jscpd_tool_version_falls_back_to_cmd_for_windows_shim(monkeypatch) -> N
     assert JscpdAnalyzer().tool_version() == "5.4.1"
     assert calls[-1][0] == ["cmd", "/c", shim, "--version"]
     assert calls[-1][1].get("shell", False) is False
+
+
+def test_jscpd_command_ignores_generated_work_and_common_dependency_directories(tmp_path) -> None:
+    command = JscpdAnalyzer().build_command(ScanContext(repo_root=str(tmp_path)))
+    scan_command = command[3:] if command[:2] == ["cmd", "/c"] else command[1:]
+
+    assert scan_command[0:4] == [".", "--reporters", "json", "--output"]
+    assert command[command.index("--ignore") + 1] == (
+        ".code-health/**,.git/**,.venv/**,node_modules/**,dist/**,build/**,generated/**"
+    )
+
+
+def test_jscpd_parses_default_report_filename(tmp_path) -> None:
+    report_path = tmp_path / ".code-health" / "raw" / "jscpd-report.json"
+    report_path.parent.mkdir(parents=True)
+    report_path.write_text(
+        '{"duplicates": [{"lines": 4, "firstFile": {"name": "a.py"}, '
+        '"secondFile": {"name": "b.py"}}]}',
+        encoding="utf-8",
+    )
+
+    observations = JscpdAnalyzer().parse(
+        RawAnalyzerResult(name="jscpd", available=True),
+        ScanContext(repo_root=str(tmp_path)),
+    )
+
+    assert {item.path: item.data for item in observations} == {
+        "a.py": {"duplicated_lines": 4},
+        "b.py": {"duplicated_lines": 4},
+    }
+
+
+def test_jscpd_parses_legacy_report_filename(tmp_path) -> None:
+    report_path = tmp_path / ".code-health" / "raw" / "jscpd.json"
+    report_path.parent.mkdir(parents=True)
+    report_path.write_text(
+        '{"duplicates": [{"lines": 3, "firstFile": {"name": "old.py"}, '
+        '"secondFile": {"name": "copy.py"}}]}',
+        encoding="utf-8",
+    )
+
+    observations = JscpdAnalyzer().parse(
+        RawAnalyzerResult(name="jscpd", available=True),
+        ScanContext(repo_root=str(tmp_path)),
+    )
+
+    assert {item.path: item.data for item in observations} == {
+        "old.py": {"duplicated_lines": 3},
+        "copy.py": {"duplicated_lines": 3},
+    }
